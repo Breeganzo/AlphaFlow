@@ -14,7 +14,7 @@ import pandas as pd
 import pytest
 import sys, os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../"))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
 
 from alpha_flow.core.ofi_calculator import compute_ofi, rolling_ofi_zscore
 from alpha_flow.core.amihud import amihud_ratio, kyle_lambda
