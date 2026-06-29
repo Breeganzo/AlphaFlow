@@ -17,19 +17,32 @@ const DARK_S = {
   sellBg: '#7f1d1d', sellText: '#FCA5A5',
   holdBg: '#713f12', holdText: '#FDE68A',
   scrollThumb: '#1E3A5F',
+  positiveVal: '#86EFAC',   // light green on dark — positive metric value
+  negativeVal: '#FCA5A5',   // light red on dark   — negative metric value
+  warnVal:     '#FDE68A',   // amber on dark       — warning metric value
 }
 const LIGHT_S = {
-  bg: '#F0F4FF', surface: '#FFFFFF', border: '#B8CCEE',
-  primary: '#1D4ED8', text: '#0F172A', muted: '#1E3A8A',
-  runBtn: '#1D4ED8', tag: '#DBEAFE', cardBg: '#E8EFFF',
-  tipBg: '#FFFFFF', tipBorder: '#93C5FD',
-  success: '#DCFCE7', successText: '#14532D',
-  error: '#FEE2E2', errorText: '#7F1D1D',
-  warn: '#FEF9C3', warnText: '#713F12',
-  buyBg: '#DCFCE7', buyText: '#14532D',
-  sellBg: '#FEE2E2', sellText: '#7F1D1D',
-  holdBg: '#FEF9C3', holdText: '#713F12',
-  scrollThumb: '#B8CCEE',
+  bg: '#C9DCF2',           // clear slate-blue page background — unmistakably blue
+  surface: '#DBE9F8',      // blue-tinted card surface (never pure white)
+  border: '#7AADDA',       // visible medium-blue border
+  primary: '#1E40AF',      // deep blue accent
+  text: '#071526',         // near-black navy — maximum readability
+  muted: '#244E7A',        // medium navy — readable, not too dark
+  runBtn: '#1D4ED8',
+  tag: '#B8D4EE',
+  cardBg: '#CFDFF3',       // slightly darker panel inner
+  tipBg: '#1E3A5F',          // always-dark tooltip — existing tooltip text colours work in both modes
+  tipBorder: '#2D6FA888',
+  success: '#D1FAE5',      successText: '#052E16',  // light green bg + very dark text — readable on blue
+  error: '#FEE2E2',        errorText: '#450A0A',    // light red bg + very dark text
+  warn: '#FEF3C7',         warnText: '#3F1700',     // light amber bg + very dark text
+  buyBg: '#14532D',        buyText: '#DCFCE7',      // dark green badge — pops on any light background
+  sellBg: '#7F1D1D',       sellText: '#FEE2E2',     // dark red badge
+  holdBg: '#78350F',       holdText: '#FEF3C7',     // dark amber badge
+  scrollThumb: '#7AADDA',
+  positiveVal: '#166534',    // dark green on light — readable against blue bg
+  negativeVal: '#991B1B',    // dark red on light
+  warnVal:     '#78350F',    // dark amber on light
 }
 type Theme = typeof DARK_S
 const ThemeCtx = createContext<{ S: Theme; isDark: boolean }>({ S: DARK_S, isDark: true })
@@ -58,12 +71,29 @@ const TICKER_COLORS: Record<string, string> = {
   AAPL: '#79c0ff', AMZN: '#56d364', BAC: '#ffa657', GOOGL: '#f78166', JPM: '#d2a8ff',
   META: '#58a6ff', MSFT: '#3fb950', NVDA: '#e3b341', TSLA: '#ff7b72', V: '#bc8cff',
 }
+// High-contrast dark variants for light mode (same hues, much darker for readability)
+const TICKER_COLORS_LIGHT: Record<string, string> = {
+  AAPL: '#0369A1', AMZN: '#166534', BAC: '#9A3412', GOOGL: '#991B1B', JPM: '#6D28D9',
+  META: '#1D4ED8', MSFT: '#065F46', NVDA: '#92400E', TSLA: '#9B1C1C', V: '#5B21B6',
+}
 // Rotating palette for custom tickers (beyond the default 10)
-const EXTRA_COLORS = ['#a5f3fc', '#fde68a', '#d9f99d', '#fbcfe8', '#e9d5ff', '#fed7aa', '#fecaca', '#bfdbfe']
-function getTickerColor(ticker: string): string {
-  if (TICKER_COLORS[ticker]) return TICKER_COLORS[ticker]
-  const idx = ticker.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % EXTRA_COLORS.length
-  return EXTRA_COLORS[idx]
+const EXTRA_COLORS       = ['#a5f3fc', '#fde68a', '#d9f99d', '#fbcfe8', '#e9d5ff', '#fed7aa', '#fecaca', '#bfdbfe']
+const EXTRA_COLORS_LIGHT = ['#0C4A6E', '#14532D', '#713F12', '#7F1D1D', '#4C1D95', '#1E3A5F', '#064E3B', '#78350F']
+function getTickerColor(ticker: string, isDark = true): string {
+  if (isDark) {
+    if (TICKER_COLORS[ticker]) return TICKER_COLORS[ticker]
+    const idx = ticker.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % EXTRA_COLORS.length
+    return EXTRA_COLORS[idx]
+  } else {
+    if (TICKER_COLORS_LIGHT[ticker]) return TICKER_COLORS_LIGHT[ticker]
+    const idx = ticker.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % EXTRA_COLORS_LIGHT.length
+    return EXTRA_COLORS_LIGHT[idx]
+  }
+}
+// Helper: format very small numbers in scientific notation
+function fmtSmall(v: number, decimals = 4): string {
+  if (v !== 0 && Math.abs(v) < 0.001) return v.toExponential(2)
+  return v.toFixed(decimals)
 }
 
 function formatTime(iso: string | null | undefined): string {
@@ -78,7 +108,7 @@ function nowUTC() {
 }
 
 // ── Components ───────────────────────────────────────────────────────────────
-function Card({ title, children, accent = false, right }: { title: string; children: React.ReactNode; accent?: boolean; right?: React.ReactNode }) {
+function Card({ title, children, accent = false, right }: { title: React.ReactNode; children: React.ReactNode; accent?: boolean; right?: React.ReactNode }) {
   const S = useS()
   const [hov, setHov] = useState(false)
   return (
@@ -245,7 +275,7 @@ function OFIRechartsChart({ S, fullscreen = false }: { S: Theme; fullscreen?: bo
             const col = getTickerColor(t)
             return (
               <button key={t} onClick={() => toggleTicker(t)} title={tickerNames[t]?.[0] ?? t}
-                style={{ background: hidden ? 'transparent' : `${col}20`, color: hidden ? '#475569' : col, border: `1.5px solid ${hidden ? S.border : col + '88'}`, borderRadius: 20, padding: '3px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>
+                style={{ background: hidden ? 'transparent' : `${col}20`, color: hidden ? S.muted : col, border: `1.5px solid ${hidden ? S.border : col + '88'}`, borderRadius: 20, padding: '3px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>
                 {t}
               </button>
             )
@@ -340,7 +370,7 @@ function ChartDateTickers({ S, tickers, hidden, onToggle, onResetAll, startDate,
         const h = hidden.has(t); const col = getTickerColor(t)
         return (
           <button key={t} onClick={() => onToggle(t)} title={tickerNames[t]?.[0] ?? t}
-            style={{ background: h ? 'transparent' : `${col}20`, color: h ? '#475569' : col, border: `1.5px solid ${h ? S.border : col + '88'}`, borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>
+            style={{ background: h ? 'transparent' : `${col}20`, color: h ? S.muted : col, border: `1.5px solid ${h ? S.border : col + '88'}`, borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>
             {t}
           </button>
         )
@@ -546,11 +576,11 @@ function HistoryPanel({ S, qc }: { S: Theme; qc: ReturnType<typeof useQueryClien
         <p style={{ color: S.muted, fontSize: 12, margin: 0, opacity: 0.55, textAlign: 'center', padding: '10px 0' }}>
           {count > 0
             ? `${count} pipeline run${count !== 1 ? 's' : ''} recorded — click the button above to expand`
-            : 'No runs yet — click Run Pipeline above'}
+            : 'No runs yet — click Compute EOD Signals above'}
         </p>
       ) : !history.data?.length ? (
         <p style={{ color: S.muted, fontStyle: 'italic', opacity: 0.5, fontSize: 13, textAlign: 'center', padding: '20px 0' }}>
-          No runs yet — click Run Pipeline
+          No runs yet — click Compute EOD Signals
         </p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -571,9 +601,9 @@ function HistoryPanel({ S, qc }: { S: Theme; qc: ReturnType<typeof useQueryClien
                   onMouseEnter={e => { if (!isOpen) (e.currentTarget as HTMLDivElement).style.background = `${S.primary}06` }}
                   onMouseLeave={e => { if (!isOpen) (e.currentTarget as HTMLDivElement).style.background = S.surface }}>
                   <div style={{ width: 7, height: 7, borderRadius: '50%', background: accentCol, flexShrink: 0, boxShadow: isRunning ? `0 0 8px ${accentCol}88` : 'none' }} />
-                  <span style={{ color: S.primary, fontWeight: 800, fontSize: 13, minWidth: 50 }}>Run #{row.id}</span>
+                  <span style={{ color: S.text, fontWeight: 700, fontSize: 12, flex: 1 }}>{formatTime(row.started_at)}</span>
                   <StatusBadge s={row.status || 'running'} />
-                  <span style={{ color: S.text, fontSize: 11, flex: 1 }}>{formatTime(row.started_at)}</span>
+                  <span style={{ color: S.muted, fontSize: 10, background: `${S.primary}15`, border: `1px solid ${S.primary}33`, borderRadius: 4, padding: '1px 7px', fontWeight: 600 }}>#{row.id}</span>
                   <span style={{ color: S.muted, fontSize: 11 }}>⏱ {dur}</span>
                   <button
                     onClick={e => { e.stopPropagation(); setOpenModal(row.id) }}
@@ -645,7 +675,7 @@ function HistoryRunDetail({ S, runId }: { S: Theme; runId: number }) {
                     const col = getTickerColor(s.ticker)
                     const ofi = Number(s.ofi ?? 0)
                     const ofiDir = ofi > 0.15 ? '▲' : ofi < -0.15 ? '▼' : '→'
-                    const ofiColor = ofi > 0.15 ? '#86EFAC' : ofi < -0.15 ? '#FCA5A5' : S.muted
+                    const ofiColor = ofi > 0.15 ? S.positiveVal : ofi < -0.15 ? S.negativeVal : S.muted
                     return (
                       <div key={s.ticker} style={{ background: S.surface, border: `1px solid ${col}`, borderRadius: 8, padding: '10px 12px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
@@ -739,8 +769,11 @@ function RunModal({ runId, onClose }: { runId: number; onClose: () => void }) {
                     <SignalBadge sig={s.signal ?? 'HOLD'} />
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 8px', marginBottom: 6 }}>
-                    {[['OFI Z', Number(s.ofi ?? 0).toFixed(3)], ['Spread', `${Number(s.eff_spread_bps ?? 0).toFixed(1)} bps`], ['Kyle λ', Number(s.kyle_lambda ?? 0).toExponential(1)], ['Amihud', Number(s.amihud_illiq ?? 0).toExponential(1)], ...(s.ic_value != null ? [['IC', Number(s.ic_value).toFixed(4)]] : [])].map(([k, v]) => (
-                      <React.Fragment key={k}><span style={{ color: S.muted, fontSize: 9 }}>{k}</span><span style={{ color: S.text, fontSize: 10, textAlign: 'right' }}>{v}</span></React.Fragment>
+                    {[['OFI Z', Number(s.ofi ?? 0).toFixed(3)], ['Spread', `${Number(s.eff_spread_bps ?? 0).toFixed(1)} bps`], ['Kyle λ', Number(s.kyle_lambda ?? 0).toExponential(1)], ['Amihud', Number(s.amihud_illiq ?? 0).toExponential(1)], ...(s.ic_value != null ? [['IC†', `${(Number(s.ic_value) * 100).toFixed(2)}%`]] : [])].map(([k, v]) => (
+                      <React.Fragment key={k}>
+                        <span style={{ color: S.muted, fontSize: 9 }}>{k}</span>
+                        <span style={{ color: k === 'IC†' ? (Math.abs(Number(s.ic_value)) >= 0.05 ? S.positiveVal : Math.abs(Number(s.ic_value)) >= 0.02 ? S.warnVal : S.muted) : S.text, fontSize: 10, textAlign: 'right' }}>{v}</span>
+                      </React.Fragment>
                     ))}
                   </div>
                   {s.llm_reason && <p style={{ color: S.muted, fontSize: 9, margin: 0, lineHeight: 1.4, fontStyle: 'italic', borderTop: `1px solid ${S.border}33`, paddingTop: 5, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{(s.llm_reason as string).replace(/LLM unavailable: Error code: \d+ - \{[\s\S]*\}/, 'Groq rate limit \u2014 re-run when tokens reset').replace(/LLM unavailable: /, '').slice(0, 130)}</p>}
@@ -779,20 +812,347 @@ const TIP_AMIHUD = (<div><p style={{ color: '#38BDF8', fontSize: 11, fontWeight:
 const TIP_SHARPE = (<div><p style={{ color: '#38BDF8', fontSize: 11, fontWeight: 700, margin: '0 0 4px' }}>Sharpe Ratio — Per Ticker</p><p style={{ color: '#475569', fontSize: 10, fontFamily: 'monospace', margin: '0 0 5px' }}>Sharpe = √252 × μ / σ (annualised)</p><p style={{ color: '#CBD5E1', fontSize: 11, margin: '0 0 5px' }}>Risk-adjusted return of each stock over the walk-forward test windows. Sharpe &gt; 1 = strong. Sharpe &lt; 0 = the stock declined in the test period. This reflects the STOCK's performance, not the signal's quality.</p><p style={{ color: '#334155', fontSize: 9, margin: '4px 0 0' }}>📚 Sharpe (1994) J. Portfolio Mgmt, 21(1), 49–58.</p></div>)
 
 const METRIC_META: Record<string, { label: string; unit: string; help: string; formula: string; ref: string }> = {
-  avg_effective_spread_bps: { label: 'Eff. Spread', unit: 'bps', formula: 'Corwin-Schultz (2012)', help: 'Average C-S spread across 10 tickers. S&P 500: 5–25 bps typical. Daily OHLCV gives ~30–70 bps (wider than intraday).', ref: 'Corwin & Schultz, JF (2012)' },
+  avg_effective_spread_bps: { label: 'Eff. Spread', unit: 'bps', formula: 'Corwin-Schultz (2012)', help: 'Average C-S spread across the active universe. S&P 500: 5–25 bps typical. Daily OHLCV gives ~30–70 bps (wider than intraday).', ref: 'Corwin & Schultz, JF (2012)' },
   avg_amihud_illiq: { label: 'Amihud ILLIQ', unit: 'Δprice / $1M vol', formula: 'ILLIQ_t = |r_t| / DollarVol_t', help: 'Price impact per $1M of traded volume. Liquid large-caps < 1×10⁻⁷. Higher = less liquid.', ref: 'Amihud, JFM (2002)' },
   avg_kyle_lambda: { label: "Kyle's λ", unit: '$/share per OFI unit', formula: 'Δp_t = λ·x_t + ε (rolling OLS)', help: 'Price impact coefficient. Each unit of net order flow moves price by λ. Higher = less liquid market depth.', ref: 'Kyle, Econometrica (1985)' },
-  ofi_predictive_ic: { label: 'OFI IC', unit: 'Spearman ρ', formula: 'Spearman(OFI_z_t, r[t+1])', help: 'Signal quality. IC > 0.05 = significant. Phase 1 IC ≈ 0 is expected — daily OHLCV cannot resolve intra-bar direction.', ref: 'Grinold & Kahn (2000)' },
+  ofi_predictive_ic: { label: 'OFI Pred. IC†', unit: '% (Spearman ρ × 100)', formula: 'Spearman(OFI_z_t, r[t+1])', help: 'Signal quality. IC > 5% = significant. Daily IC ≈ 0% is expected — OHLCV bars cannot resolve intra-bar direction. Switch to Hourly (Intraday Alpha Engine) for IC > 5%.', ref: 'Grinold & Kahn (2000)' },
+}
+
+// Research Drawer metric explanations — Phase 1 and Phase 2
+const DRAWER_METRIC_META: Record<string, { label: string; unit: string; formula: string; help: string; ref: string }> = {
+  IC:       { label: 'Information Coefficient (Phase 2)', unit: 'Spearman ρ', formula: 'IC = Spearmanr(LightGBM_predicted_return, actual_return)', help: 'Mean walk-forward IC from the LightGBM regressor across all folds. Measures how accurately the model ranks next-bar returns. IC > 5% = statistically meaningful. Negative IC means the model consistently predicts the inverted direction — still usable by flipping the signal. Phase 1 daily OFI IC ≈ 0 is expected (OHLCV cannot resolve intra-bar direction); hourly IC uses 12 microstructure features.', ref: 'Grinold & Kahn (2000) Active Portfolio Mgmt.' },
+  Sharpe:   { label: 'Annualised Sharpe Ratio', unit: 'dimensionless', formula: 'Sharpe = mean(r) / std(r) × √252 × √6.5', help: 'Risk-adjusted annualised return from the walk-forward out-of-sample equity curve. Any positive Sharpe indicates the model earns more than it risks. > 1.0 = publishable, > 2.0 = excellent. Near-zero is expected until live tick data improves model IC.', ref: 'Sharpe (1994) J. Portfolio Mgmt.' },
+  'Max DD': { label: 'Maximum Drawdown', unit: '%', formula: 'MDD = min((Equity_t − Peak_t) / Peak_t)', help: 'Worst peak-to-trough equity loss in the walk-forward test period. Benchmarks: < 10% = excellent; 10–25% = acceptable; > 25% = needs review. At daily IC ≈ 0 the equity curve is near-random — expect 15–20% MDD, which shrinks as model IC improves with live intraday data.', ref: 'Grinold & Kahn (2000) Ch.14' },
+  Folds:    { label: 'Walk-Forward Folds', unit: 'count', formula: 'folds = total_bars / (train_window + test_window)', help: 'Number of train/test windows in the walk-forward cross-validation. More folds = more statistically reliable IC estimate. AlphaFlow uses ~17 folds on ≈3,276 hourly bars (2 years at 1-hr resolution), preventing any look-ahead bias.', ref: 'De Prado (2018) Advances in Financial ML, Ch.7' },
+  'OFI Z':  { label: 'Order Flow Imbalance Z-Score', unit: 'σ', formula: 'OFI = (buy_vol − sell_vol) / total_vol; z-scored 20-bar rolling', help: 'Rolling z-score of net order flow pressure. Above +1.5σ = sustained buy pressure; below −1.5σ = sell pressure. Values near zero indicate balanced book. Used as a primary Phase 1 signal and Phase 2 feature.', ref: 'Chordia, Roll & Subrahmanyam (2002)' },
+  Spread:   { label: 'Corwin-Schultz Bid-Ask Spread', unit: 'basis points', formula: 'CS Spread = 2(eᵅ−1)/(1+eᵅ) from High/Low daily bars', help: 'Estimated transaction cost from OHLCV data — no TAQ or Level 2 data needed. S&P 500 range: 5–25 bps intraday; 30–70 bps from daily bars (wider due to aggregation). Lower = cheaper to execute.', ref: 'Corwin & Schultz (2012) J. Finance 67(2)' },
+  'Kyle λ': { label: "Kyle's Lambda (Price Impact)", unit: '$/share per OFI unit', formula: 'λ = Cov(ΔPrice, OFI) / Var(OFI) via rolling OLS', help: "Price impact coefficient: each unit of net order flow moves price by λ. Measures market depth — higher λ = thinner book, more adverse selection risk. Large-caps typically λ < 1×10⁻⁶. Kyle (1985) showed informed traders' optimal strategy depends directly on this parameter.", ref: 'Kyle, Econometrica (1985)' },
 }
 
 const CHART_DESC: Record<string, { title: string; what: string; how: string }> = {
-  'ofi_zscore_chart.png': { title: 'OFI Z-score Monitor', what: 'Net buy/sell pressure for all 10 tickers, last 60 bars. Amber dashed = ±1.5σ thresholds.', how: 'Rolling 20-bar OFI Z-score from daily OHLCV. Crossings above ±1.5σ trigger BUY/SELL. Click to expand + filter tickers.' },
+  'ofi_zscore_chart.png': { title: 'OFI Z-score Monitor', what: 'Net buy/sell pressure across all active tickers, last 60 bars. Amber dashed = ±1.5σ thresholds.', how: 'Rolling 20-bar OFI Z-score from daily OHLCV. Crossings above ±1.5σ trigger BUY/SELL. Click to expand + filter tickers.' },
   'execution_quality.png': { title: 'Execution Quality', what: 'Corwin-Schultz spread (bps) and Amihud illiquidity over 2 years.', how: 'Spread spikes = earnings/macro events. Amihud spikes = institutional block trades reducing market depth.' },
   'kyle_lambda_trend.png': { title: "Kyle's λ Trend", what: 'Price impact coefficient over 2 years (30-day rolling mean).', how: 'Rising λ = market depth declining. High λ periods = elevated institutional participation or low liquidity.' },
   'alpha_decay.png': { title: 'Alpha Decay (IC Lags 1–10)', what: 'Spearman IC between OFI Z-score and forward returns at 1–10 day horizons.', how: 'Rapid IC decay = microstructure alpha is short-lived (intraday only). Amber lines = ±0.05 significance.' },
 }
 
 type ChatMsg = { role: 'user' | 'assistant'; content: string }
+
+// ── Tooltip component — shows explanation on hover ────────────────────────────
+const TERM_TIPS: Record<string, string> = {
+  // Phase 1
+  'OFI':           'Order Flow Imbalance (Chordia 2002): (buy_vol − sell_vol) / total_vol. Measures whether buyers or sellers are more aggressive. Range [−1, +1].',
+  'OFI Z':         'Rolling z-score of OFI over 20 bars. Values above +1.5 = sustained buying pressure; below −1.5 = selling pressure.',
+  'Kyle λ':        'Kyle\'s Lambda (Kyle 1985): λ = Cov(ΔPrice, OFI) / Var(OFI). Price impact per unit of net order flow. Higher λ = less liquid market.',
+  'Amihud ILLIQ':  'Amihud (2002) illiquidity ratio: |r_t| / (Price_t × Volume_t). How much the price moves per $1M traded. Low = liquid (large-caps ≈ 1e-7).',
+  'C-S Spread':    'Corwin-Schultz (2012) bid-ask spread estimate from High/Low bars. Spread = 2(eᵅ−1)/(1+eᵅ). Measures execution cost in basis points.',
+  'IC':            'Information Coefficient: Spearman rank correlation between predicted return and actual return. IC > 0.05 = statistically useful signal.',
+  'Sharpe':        'Annualised Sharpe ratio: mean(returns) / std(returns) × √252. Industry hurdle: > 1.0 = publishable, > 2.0 = excellent.',
+  'Walk-Forward':  'Train on past N bars, test on next M bars, slide forward. Prevents look-ahead bias. More folds = more statistically reliable IC estimate.',
+  // Phase 2
+  'LGBMRegressor': 'LightGBM Gradient Boosting Regressor — predicts CONTINUOUS future return magnitude, not just direction. Enables proper IC measurement via Spearman correlation. ~17 walk-forward folds on 3,276 hourly bars.',
+  'SHAP':          'SHapley Additive exPlanations (Lundberg & Lee 2017): how much each feature contributed to each prediction. Bars show mean |SHAP| across all test-fold predictions.',
+  'VWAP':          'Volume Weighted Average Price: Σ(typical_price × vol) / Σ(vol), resetting each trading day. Institutional benchmark — deviations signal reversion opportunities.',
+  'VWAP Z':        'VWAP deviation z-score: how many σ the current price is above/below VWAP. >+1.5σ = overbought (short); <−1.5σ = oversold (long).',
+  'Hawkes':        'Hawkes process (Bacry 2015): λ(t) = μ + Σ α·e^(−β·Δt). Self-exciting point process — models how institutional orders trigger follow-on orders.',
+  'Hawkes Z':      'Hawkes intensity z-score. High values = burst of order activity detected, likely institutional. Novel AlphaFlow contribution: using Hawkes intensity as LLM feature.',
+  'Volume Clock':  'Volume imbalance: (buy_vol − sell_vol) / total_vol (López de Prado 2018 Ch.3). Dollar bars sample by volume not time — equal information content per bar.',
+  'Volume Z':      'Z-score of volume imbalance over 20-bar rolling window. Positive = net buyers aggressive; negative = net sellers aggressive.',
+  'Live':          'Server-Sent Events (SSE) stream from backend → browser. Green = connected to /api/stream (synthetic bars in free tier, real Alpaca IEX data with API key). Pulses every 15 seconds.',
+  'Stream off':    'SSE stream not connected. Switch to Hourly mode and allow a moment to connect. Stream provides live bar data to the dashboard. Free tier = synthetic random walk (demonstrates the architecture).',
+}
+
+function InfoTip({ term, children }: { term: string; children?: React.ReactNode }) {
+  const S = useS()
+  const tip = TERM_TIPS[term] || ''
+  if (!tip) return <>{children}</>
+  return (
+    <span title={tip} style={{
+      cursor: 'help',
+      borderBottom: `1px dashed ${S.border}`,
+      display: 'inline',
+    }}>
+      {children || term}
+    </span>
+  )
+}
+
+function InfoIcon({ term }: { term: string }) {
+  const S = useS()
+  const tip = TERM_TIPS[term] || ''
+  if (!tip) return null
+  return (
+    <span title={tip} style={{
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      width: 14, height: 14, borderRadius: '50%',
+      background: S.border, color: S.muted,
+      fontSize: 9, fontWeight: 700, cursor: 'help',
+      marginLeft: 4, verticalAlign: 'middle', flexShrink: 0,
+    }}>i</span>
+  )
+}
+
+// ── Phase 2: SHAP feature explanations ───────────────────────────────────────
+const FEATURE_EXPLANATIONS: Record<string, { label: string; formula: string; highMeans: string; lowMeans: string; paper: string }> = {
+  ofi_zscore:    { label: 'Order Flow Imbalance Z-Score', formula: 'OFI = (Δbid_vol − Δask_vol) / (bid_vol + ask_vol)', highMeans: 'More buy orders are flowing into the book than sell orders. Smart money may be quietly accumulating — OFI leads price by ~30 min at hourly resolution (Chordia 2002).', lowMeans: 'Sell-side pressure is dominant. Net order flow is negative — distribution phase.', paper: 'Chordia, Roll & Subrahmanyam (2002) J. Financial Economics 65(1)' },
+  amihud:        { label: 'Amihud Illiquidity Ratio', formula: 'ILLIQ = |return| / dollar_volume × 10⁶', highMeans: 'The stock is illiquid today — each $1M of trading moves the price significantly. Precedes larger directional moves when combined with order flow signals.', lowMeans: 'Deep, two-sided liquidity. Large institutions can execute without moving price.', paper: 'Amihud (2002) J. Financial Markets 5(1)' },
+  kyle_lambda:   { label: "Kyle's Lambda (Price Impact)", formula: 'λ = Δprice / signed_volume (OLS slope)', highMeans: 'Market is thin — informed traders can move price with small volume. High λ precedes sharp directional moves and signals information asymmetry.', lowMeans: 'Market is deep. Low impact — competitive market making with tight spreads.', paper: 'Kyle (1985) Econometrica 53(6)' },
+  cs_spread:     { label: 'Corwin-Schultz Bid-Ask Spread', formula: 'Estimated from daily high-low ranges (no TAQ data needed)', highMeans: 'Dealers are quoting wide — compensating for adverse selection risk. High spread = market makers expect informed order flow, which is predictive of direction.', lowMeans: 'Narrow spread. Competitive market making, low information asymmetry.', paper: 'Corwin & Schultz (2012) J. Finance 67(2)' },
+  tick_sign:     { label: 'Lee-Ready Tick Sign (Trade Direction)', formula: '+1 = uptick (P_t > P_{t-1}), −1 = downtick', highMeans: 'Consecutive upticks: buyers are lifting the ask aggressively. Positive serial correlation in tick direction — trend-following microstructure effect.', lowMeans: 'Downticks dominating. Sellers are hitting the bid — bearish pressure.', paper: 'Lee & Ready (1991) J. Finance 46(2)' },
+  vwap_zscore:   { label: 'VWAP Deviation Z-Score', formula: 'VWAP = Σ(P×V)/ΣV daily reset; z = (P − VWAP) / σ', highMeans: 'Price is well above today\'s volume-weighted cost. VWAP algos (used by institutions) will resist going higher — mean-reversion risk at >2σ. Below 2σ = momentum.', lowMeans: 'Price below VWAP. Institutional buy programs reset here — potential support level.', paper: 'Almgren & Chriss (2001) J. Risk 3(2)' },
+  volume_zscore: { label: 'Volume Clock Imbalance Z-Score', formula: 'Imbalance = (buy_vol − sell_vol) / total_vol; z-scored', highMeans: 'Volume-weighted buying pressure is surging. Volume imbalance leads price at 1-3 bar horizon with higher IC than pure OFI at hourly resolution (López de Prado 2018).', lowMeans: 'Volume-weighted selling. Distribution phase — sellers are more aggressive.', paper: 'López de Prado (2018) Advances in Financial ML, Ch.3' },
+  hawkes_zscore: { label: 'Hawkes Process Intensity Z-Score', formula: 'λ(t) = μ + Σᵢ α·exp(−β·(t−tᵢ)), MLE via L-BFGS-B', highMeans: 'Order arrival rate is self-exciting — each trade triggers more trades. High Hawkes intensity predicts short-burst volatility clustering. This is the novel Phase 2 signal derived from stochastic point process theory.', lowMeans: 'Calm, uncorrelated order flow. Background Poisson rate only — no clustering.', paper: 'Bacry, Mastromatteo & Muzy (2015) Market Microstructure and Liquidity 1(01)' },
+  ret_1h:        { label: '1-Hour Lagged Return', formula: 'ret_1h = (close_{t-1} − close_{t-2}) / close_{t-2}', highMeans: 'Strong positive return in the prior bar. Short-term momentum at 1h horizon — most liquid large-caps show positive autocorrelation at this frequency.', lowMeans: 'Negative prior return — short-term mean-reversion may dominate.', paper: 'Jegadeesh & Titman (1993) J. Finance 48(1)' },
+  ret_3h:        { label: '3-Hour Lagged Return', formula: 'ret_3h = (close_{t-1} − close_{t-4}) / close_{t-4}', highMeans: 'Positive 3-bar return leading into the prediction window. Multi-horizon momentum check used to distinguish intraday trends from noise.', lowMeans: 'Negative 3-bar trend. Possible intraday exhaustion forming.', paper: 'Lo & MacKinlay (1988) J. Financial Economics 22(1)' },
+  ret_6h:        { label: '6-Hour Lagged Return (half-day)', formula: 'ret_6h = (close_{t-1} − close_{t-7}) / close_{t-7}', highMeans: 'Strong half-day momentum. Captures morning-to-afternoon directional trends and overnight gap follow-through into the following session.', lowMeans: 'Half-day reversal pattern forming — potential mean-reversion opportunity.', paper: 'Jegadeesh & Titman (1993) J. Finance 48(1)' },
+  vol_ratio:     { label: 'Volume Ratio (vs 20-bar rolling avg)', formula: 'vol_ratio = volume_t / rolling_20_avg(volume)', highMeans: 'Volume spike (2×–3× normal). Signals institutional activity, news absorption, or index rebalancing. High volume on an up-bar = accumulation; on a down-bar = distribution.', lowMeans: 'Below-average volume. Market participants inactive — signals are less reliable at low volume.', paper: 'Karpoff (1987) J. Financial and Quantitative Analysis 22(1)' },
+}
+
+// ── Phase 2: SHAP Feature Modal ───────────────────────────────────────────────
+function ShapFeatureModal({ feature, importance, ticker, onClose }: { feature: string; importance: number; ticker: string; onClose: () => void }) {
+  const S = useS()
+  const exp = FEATURE_EXPLANATIONS[feature]
+  return createPortal(
+    <div style={{ position: 'fixed', inset: 0, background: '#00000090', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={onClose}>
+      <div style={{ background: S.surface, border: `1px solid ${S.primary}66`, borderRadius: 14, padding: 28, maxWidth: 500, width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+          <div>
+            <p style={{ color: S.muted, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 4px' }}>SHAP Feature Explanation</p>
+            <h3 style={{ color: S.primary, fontSize: 14, fontWeight: 700, margin: 0 }}>{exp?.label ?? feature}</h3>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, width: 28, height: 28, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}>✕</button>
+        </div>
+        {exp && <>
+          <div style={{ background: S.cardBg, borderRadius: 8, padding: '8px 14px', marginBottom: 14, borderLeft: `3px solid ${S.primary}` }}>
+            <p style={{ color: S.muted, fontSize: 9, margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Formula</p>
+            <p style={{ color: S.text, fontFamily: 'monospace', fontSize: 11, margin: 0 }}>{exp.formula}</p>
+          </div>
+          <div style={{ background: `${S.primary}11`, borderRadius: 8, padding: '10px 14px', marginBottom: 14 }}>
+            <p style={{ color: S.primary, fontSize: 10, fontWeight: 700, margin: '0 0 5px' }}>What this means for <strong>{ticker}</strong> right now:</p>
+            <p style={{ color: S.text, fontSize: 12, lineHeight: 1.65, margin: 0 }}>
+              High <code style={{ background: S.cardBg, padding: '1px 5px', borderRadius: 4, fontSize: 10 }}>{feature}</code> importance → {exp.highMeans}
+            </p>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <span style={{ color: S.muted, fontSize: 10 }}>SHAP Importance Value: </span>
+            <span style={{ color: '#38BDF8', fontWeight: 700, fontFamily: 'monospace', fontSize: 12 }}>{importance.toFixed(6)}</span>
+            <span style={{ color: S.muted, fontSize: 9, marginLeft: 8 }}>(mean |SHAP| across {ticker === 'ALL' ? 'all tickers' : 'test folds'})</span>
+          </div>
+          <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <p style={{ color: S.muted, fontSize: 10, margin: 0 }}>📚 {exp.paper}</p>
+            <button onClick={onClose} style={{ background: S.runBtn, color: '#fff', border: 'none', borderRadius: 6, padding: '4px 14px', fontSize: 11, cursor: 'pointer' }}>Got it</button>
+          </div>
+        </>}
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+// ── Metric Explanation Modal ─────────────────────────────────────────────────
+function MetricExplanationModal({ metricKey, onClose }: { metricKey: string; onClose: () => void }) {
+  const S = useS()
+  const meta = METRIC_META[metricKey] ?? DRAWER_METRIC_META[metricKey]
+  if (!meta) return null
+  return createPortal(
+    <div style={{ position: 'fixed', inset: 0, background: '#00000090', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={onClose}>
+      <div style={{ background: S.surface, border: `1px solid ${S.primary}66`, borderRadius: 14, padding: 28, maxWidth: 500, width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+          <div>
+            <p style={{ color: S.muted, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 4px' }}>Live Metric Explanation</p>
+            <h3 style={{ color: S.primary, fontSize: 16, fontWeight: 700, margin: 0 }}>{meta.label}</h3>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, width: 28, height: 28, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}>✕</button>
+        </div>
+        <div style={{ background: S.cardBg, borderRadius: 8, padding: '8px 14px', marginBottom: 14, borderLeft: `3px solid ${S.primary}` }}>
+          <p style={{ color: S.muted, fontSize: 9, margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Formula / Method</p>
+          <p style={{ color: S.text, fontFamily: 'monospace', fontSize: 11, margin: 0 }}>{meta.formula}</p>
+        </div>
+        <div style={{ background: `${S.primary}11`, borderRadius: 8, padding: '10px 14px', marginBottom: 14 }}>
+          <p style={{ color: S.primary, fontSize: 11, fontWeight: 700, margin: '0 0 6px' }}>What this measures:</p>
+          <p style={{ color: S.text, fontSize: 12, lineHeight: 1.65, margin: 0 }}>{meta.help}</p>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: `1px solid ${S.border}`, paddingTop: 12 }}>
+          <div>
+            <span style={{ color: S.muted, fontSize: 10 }}>Unit: </span>
+            <span style={{ color: S.text, fontSize: 10, fontWeight: 700 }}>{meta.unit}</span>
+            <span style={{ color: S.muted, fontSize: 9, marginLeft: 12 }}>📚 {meta.ref}</span>
+          </div>
+          <button onClick={onClose} style={{ background: S.runBtn, color: '#fff', border: 'none', borderRadius: 6, padding: '4px 14px', fontSize: 11, cursor: 'pointer' }}>Got it</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+// ── Ticker Research Drawer — right-side slide-in, shared chat state ───────────
+function TickerResearchDrawer({ ticker, signalData, isPhase2, chat, chatInput, setChatInput, onSend, chatLoading, onClose, onMetricClick }: {
+  ticker: string; signalData: any; isPhase2: boolean
+  chat: { role: 'user' | 'assistant'; content: string }[]
+  chatInput: string; setChatInput: (v: string) => void
+  onSend: () => void; chatLoading: boolean; onClose: () => void
+  onMetricClick: (key: string) => void
+}) {
+  const S = useS()
+  const tickerNames = useContext(TickerNamesCtx)
+  const [name, sector] = tickerNames[ticker] ?? [ticker, 'Custom']
+  const inputRef = useRef<HTMLInputElement>(null)
+  const chatEndRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 80) }, [])
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chat])
+  const sig = signalData?.signal ?? 'HOLD'
+
+  const metrics2 = isPhase2 ? [
+    ['IC',     signalData?.mean_ic != null ? `${(signalData.mean_ic * 100).toFixed(2)}%` : '—', Math.abs(signalData?.mean_ic ?? 0) > 0.05 ? S.positiveVal : S.warnVal],
+    ['Sharpe', signalData?.sharpe != null ? `${signalData.sharpe >= 0 ? '+' : ''}${signalData.sharpe.toFixed(2)}` : '—', (signalData?.sharpe ?? 0) >= 0 ? S.positiveVal : S.negativeVal],
+    ['Max DD', signalData?.max_drawdown != null ? `-${(Math.abs(signalData.max_drawdown) * 100).toFixed(1)}%` : '—', Math.abs(signalData?.max_drawdown ?? 0) < 0.1 ? S.positiveVal : Math.abs(signalData?.max_drawdown ?? 0) < 0.2 ? S.warnVal : S.negativeVal],
+    ['Folds',  signalData?.n_folds != null ? `${signalData.n_folds}` : '—', S.text],
+  ] : [
+    ['OFI Z',  signalData?.ofi != null ? `${Number(signalData.ofi) > 0.15 ? '▲' : Number(signalData.ofi) < -0.15 ? '▼' : '→'} ${Number(signalData.ofi ?? 0).toFixed(3)}` : '—', Number(signalData?.ofi ?? 0) > 0.15 ? S.positiveVal : Number(signalData?.ofi ?? 0) < -0.15 ? S.negativeVal : S.muted],
+    ['Spread', signalData?.eff_spread_bps != null ? `${Number(signalData.eff_spread_bps).toFixed(1)} bps` : '—', Number(signalData?.eff_spread_bps ?? 0) > 50 ? S.negativeVal : Number(signalData?.eff_spread_bps ?? 0) > 25 ? S.warnVal : S.positiveVal],
+    ['Kyle λ', signalData?.kyle_lambda != null ? Number(signalData.kyle_lambda).toExponential(1) : '—', S.text],
+    ['Sharpe', signalData?.sharpe != null ? `${Number(signalData.sharpe) >= 0 ? '+' : ''}${Number(signalData.sharpe).toFixed(2)}` : '—', Number(signalData?.sharpe ?? 0) >= 0 ? S.positiveVal : S.negativeVal],
+  ]
+
+  return createPortal(
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: '#00000055', zIndex: 9997 }} />
+      <div style={{ position: 'fixed', top: 0, right: 0, height: '100vh', width: 'min(520px, 100vw)', background: S.surface, borderLeft: `2px solid ${S.border}`, zIndex: 9998, display: 'flex', flexDirection: 'column', boxShadow: '-20px 0 60px rgba(0,0,0,0.5)', overflowX: 'hidden' }}>
+        {/* Header */}
+        <div style={{ padding: '16px 20px', borderBottom: `1px solid ${S.border}`, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
+            <div>
+              <p style={{ color: S.muted, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 4px' }}>
+                Research Assistant · {isPhase2 ? 'Phase 2 Hourly' : 'Phase 1 Daily'}
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ color: S.text, fontSize: 20, fontWeight: 800, letterSpacing: '-0.01em' }}>{ticker}</span>
+                <SignalBadge sig={sig} />
+              </div>
+              <p style={{ color: S.muted, fontSize: 11, margin: '3px 0 0' }}>{name} · <span style={{ opacity: 0.7 }}>{sector}</span></p>
+            </div>
+            <button onClick={onClose} style={{ background: 'none', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, width: 28, height: 28, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0, fontSize: 14 }}>✕</button>
+          </div>
+          {signalData && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+              {metrics2.map(([label, val, col]) => {
+                const hasExp = !!DRAWER_METRIC_META[label as string]
+                return (
+                  <div key={label as string}
+                    onClick={() => hasExp && onMetricClick(label as string)}
+                    title={hasExp ? `Click for ${label} explanation` : undefined}
+                    style={{ background: S.cardBg, borderRadius: 6, padding: '6px 8px', textAlign: 'center', cursor: hasExp ? 'pointer' : 'default', transition: 'background 0.15s' }}
+                    onMouseEnter={e => { if (hasExp) (e.currentTarget as HTMLDivElement).style.background = S.surface }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = S.cardBg }}>
+                    <p style={{ color: S.muted, fontSize: 8, margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                      {label}{hasExp && <span style={{ opacity: 0.45, fontSize: 7 }}> ⓘ</span>}
+                    </p>
+                    <p style={{ color: col as string, fontSize: 12, fontWeight: 700, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{val}</p>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {isPhase2 && signalData && (
+            <div style={{ margin: '8px 0 0', padding: '6px 10px', background: '#0C4A6E22', border: '1px solid #0891B255', borderRadius: 7, fontSize: 9, color: '#67E8F9', lineHeight: 1.6 }}>
+              <strong style={{ color: '#38BDF8' }}>ⓘ Two IC types:</strong> &nbsp;
+              <strong>Phase 2 IC = {signalData?.mean_ic != null ? `${(signalData.mean_ic * 100).toFixed(2)}%` : '—'}</strong> — LightGBM walk-forward at hourly resolution (shown above &amp; grounded in chat).&nbsp;
+              Phase 1 daily OFI IC ≈ 0 is <em>expected</em> — OHLCV bars cannot resolve intra-bar direction.
+            </div>
+          )}
+        </div>
+        {/* Chat messages */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {chat.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '24px 0' }}>
+              <p style={{ color: S.muted, fontSize: 12, opacity: 0.7 }}>Ask Groq about {ticker}</p>
+              <p style={{ color: S.muted, fontSize: 10, opacity: 0.45, marginTop: 4 }}>History shared with the panel below — closing preserves memory</p>
+            </div>
+          )}
+          {chat.map((m, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+              <div style={{ maxWidth: '82%', padding: '9px 14px', borderRadius: 8, fontSize: 13, lineHeight: 1.65, background: m.role === 'user' ? S.primary : S.bg, color: m.role === 'user' ? '#fff' : S.text, border: m.role === 'assistant' ? `1px solid ${S.border}` : 'none' }}>{m.content}</div>
+            </div>
+          ))}
+          {chatLoading && <div style={{ display: 'flex', gap: 5, padding: '4px 0' }}>{[0, 1, 2].map(i => <div key={i} style={{ width: 7, height: 7, borderRadius: '50%', background: S.primary, opacity: 0.4 + i * 0.3 }}></div>)}</div>}
+          <div ref={chatEndRef} />
+        </div>
+        {/* Input */}
+        <div style={{ padding: '12px 20px', borderTop: `1px solid ${S.border}`, flexShrink: 0, display: 'flex', gap: 8 }}>
+          <input
+            ref={inputRef}
+            value={chatInput}
+            onChange={e => setChatInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && onSend()}
+            placeholder={`Ask about ${ticker}…`}
+            style={{ flex: 1, background: S.bg, color: S.text, border: `1px solid ${S.border}`, borderRadius: 8, padding: '10px 14px', fontSize: 13, outline: 'none' }}
+          />
+          <button onClick={onSend} disabled={chatLoading || !chatInput.trim()}
+            style={{ background: chatLoading || !chatInput.trim() ? S.border : S.runBtn, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 18px', fontSize: 12, fontWeight: 700, cursor: chatLoading || !chatInput.trim() ? 'default' : 'pointer' }}>
+            {chatLoading ? '…' : 'Send'}
+          </button>
+        </div>
+        <p style={{ color: S.muted, fontSize: 9, textAlign: 'center', padding: '4px 20px 8px', opacity: 0.35, flexShrink: 0 }}>
+          Groq llama-3.3-70b · shared chat history · closing preserves memory
+        </p>
+      </div>
+    </>,
+    document.body
+  )
+}
+
+// ── Phase 2: SHAP Feature Importance Chart ────────────────────────────────────
+function SHAPImportanceChart({ data, ticker, onBarClick }: { data: { feature: string; importance: number }[]; ticker?: string; onBarClick?: (feature: string, importance: number) => void }) {
+  const S = useS()
+  if (!data || data.length === 0) return (
+    <div style={{ height: 260, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      color: S.muted, gap: 8, background: S.cardBg, borderRadius: 8 }}>
+      <span style={{ fontSize: 26 }}>📊</span>
+      <span style={{ fontSize: 12, fontStyle: 'italic' }}>Run Intraday Pipeline to see SHAP importances</span>
+    </div>
+  )
+  // Gradient: bright → teal → green → amber → red
+  const BAR_COLORS = ['#38BDF8', '#22D3EE', '#34D399', '#86EFAC', '#A3E635', '#FDE68A', '#FCA5A5', '#D8B4FE', '#94A3B8', '#67E8F9', '#FB923C', '#F9A8D4']
+  const maxVal = Math.max(...data.map(d => d.importance))
+
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (!active || !payload?.[0]) return null
+    const feat = payload[0].payload.feature
+    const val: number = payload[0].value
+    const exp = FEATURE_EXPLANATIONS[feat]
+    return (
+      <div style={{ background: S.tipBg, border: `1px solid ${S.tipBorder}`, borderRadius: 9, padding: '10px 14px', maxWidth: 280, fontSize: 11 }}>
+        <p style={{ color: '#7DD3FC', fontWeight: 700, margin: '0 0 4px' }}>{exp?.label ?? feat}</p>
+        {exp && <p style={{ color: '#94A3B8', fontFamily: 'monospace', fontSize: 9, margin: '0 0 6px' }}>{exp.formula}</p>}
+        <p style={{ color: '#E2E8F0', margin: '0 0 5px' }}>SHAP: <strong style={{ color: '#38BDF8' }}>{val.toFixed(6)}</strong></p>
+        {exp && <p style={{ color: '#94A3B8', fontSize: 10, margin: '0 0 6px', lineHeight: 1.5 }}>{exp.highMeans.slice(0, 100)}…</p>}
+        <p style={{ color: '#7DD3FC', fontSize: 9, margin: 0, opacity: 0.7 }}>Click bar for full explanation ›</p>
+      </div>
+    )
+  }
+  return (
+    <>
+      <p style={{ color: S.muted, fontSize: 9, margin: '0 0 6px', opacity: 0.5, textAlign: 'center' }}>
+        Click any bar to see what this signal means for {ticker ?? 'this stock'} in plain English
+      </p>
+      <ResponsiveContainer width="100%" height={310}>
+        <BarChart data={data} layout="vertical" margin={{ left: 16, right: 36, top: 4, bottom: 8 }} style={{ cursor: onBarClick ? 'pointer' : 'default' }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={S.border + '55'} horizontal={false} />
+          <XAxis type="number" domain={[0, maxVal * 1.2]} tickFormatter={v => v.toFixed(4)}
+            tick={{ fill: S.muted, fontSize: 9 }} axisLine={{ stroke: S.border }} tickLine={false} />
+          <YAxis type="category" dataKey="feature" width={100}
+            tick={{ fill: S.text, fontSize: 10, fontFamily: 'monospace' }}
+            axisLine={false} tickLine={false} />
+          <RechartsTooltip content={<CustomTooltip />} />
+          <Bar dataKey="importance" radius={[0, 5, 5, 0]} onClick={(d) => onBarClick?.(d.feature, d.importance)}>
+            {data.map((_, i) => <Cell key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} opacity={i === 0 ? 1 : 0.82} />)}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </>
+  )
+}
 
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
@@ -814,6 +1174,46 @@ export default function App() {
   const [customTicker, setCustomTicker] = useState('')
   const [addingTicker, setAddingTicker] = useState(false)
   const [addTickerMsg, setAddTickerMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  // Phase 2: resolution toggle + live stream dot + intraday data
+  const [resolution, setResolution] = useState<'daily' | 'hourly'>('daily')
+  const [streamConnected, setStreamConnected] = useState(false)
+  const [selectedShapTicker, setSelectedShapTicker] = useState('AAPL')
+  const [shapClickedFeature, setShapClickedFeature] = useState<{ feature: string; importance: number } | null>(null)
+  const [clickedMetricKey, setClickedMetricKey] = useState<string | null>(null)
+  const [drawerMetricModal, setDrawerMetricModal] = useState<string | null>(null)
+  const [researchDrawerTicker, setResearchDrawerTicker] = useState<string | null>(null)
+  const [tickerCardsExpanded, setTickerCardsExpanded] = useState(true)
+
+  const intradaySignals = useQuery({
+    queryKey: ['intradaySignals'],
+    queryFn: () => axios.get('/api/intraday/signals').then(r => r.data as { signals: any[]; meta: { feature_count: number; feature_names: string[] } }),
+    refetchInterval: 30000,
+    enabled: resolution === 'hourly',
+  })
+  const shapData = useQuery({
+    queryKey: ['shapImportance', selectedShapTicker],
+    queryFn: () => axios.get(`/api/data/shap-importance?ticker=${selectedShapTicker}`).then(r => r.data),
+    refetchInterval: 60000,
+    enabled: resolution === 'hourly',
+  })
+  const runIntraday = useMutation({
+    mutationFn: () => axios.post('/api/intraday/run', {}),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['intradaySignals'] }); qc.invalidateQueries({ queryKey: ['shapImportance', selectedShapTicker] }) },
+  })
+
+  // SSE live stream connection
+  useEffect(() => {
+    if (resolution !== 'hourly') { setStreamConnected(false); return }
+    const es = new EventSource('/api/stream?tickers=AAPL,MSFT,NVDA')
+    es.onopen    = () => setStreamConnected(true)
+    es.onerror   = () => setStreamConnected(false)
+    es.onmessage = () => setStreamConnected(true)
+    return () => { es.close(); setStreamConnected(false) }
+  }, [resolution])
+
+  // Collapse Phase 1 ticker cards when switching to hourly mode
+  useEffect(() => { setTickerCardsExpanded(resolution === 'daily') }, [resolution])
 
   // Dynamic ticker registry (default 10 + any custom tickers added via UI)
   const tickerInfoQuery = useQuery({
@@ -904,6 +1304,10 @@ export default function App() {
       qc.invalidateQueries({ queryKey: ['allTickers'] })
       qc.invalidateQueries({ queryKey: ['ofiTimeseries'] })
       qc.invalidateQueries({ queryKey: ['allSignals'] })
+      qc.invalidateQueries({ queryKey: ['intradaySignals'] })
+      qc.invalidateQueries({ queryKey: ['shapImportance', t] })
+      // Reset SHAP dropdown to ALL if the deleted ticker was selected
+      if (selectedShapTicker === t) setSelectedShapTicker('ALL')
     } catch (err: any) {
       console.error(`Delete ${t} failed:`, err?.response?.data?.detail)
     }
@@ -914,7 +1318,16 @@ export default function App() {
     setChatInput('')
     const next: ChatMsg[] = [...chat, { role: 'user', content: msg }]
     setChat(next); setChatLoading(true)
-    try { const r = await axios.post('/api/chat', { message: msg, history: chat }); setChat([...next, { role: 'assistant', content: r.data.reply }]) }
+    try {
+      const body: Record<string, any> = { message: msg, history: chat }
+      if (researchDrawerTicker) {
+        body.ticker = researchDrawerTicker
+        body.phase  = resolution
+        if (resolution === 'hourly' && drawerSignalData) body.intraday_signal = drawerSignalData
+      }
+      const r = await axios.post('/api/chat', body)
+      setChat([...next, { role: 'assistant', content: r.data.reply }])
+    }
     catch { setChat([...next, { role: 'assistant', content: 'Unable to reach API — is backend running on port 8002?' }]) }
     finally { setChatLoading(false) }
   }
@@ -923,7 +1336,16 @@ export default function App() {
     if (!msg || chatLoading) return; setChatInput('')
     const next: ChatMsg[] = [...chat, { role: 'user', content: msg }]
     setChat(next); setChatLoading(true)
-    try { const r = await axios.post('/api/chat', { message: msg, history: chat }); setChat([...next, { role: 'assistant', content: r.data.reply }]) }
+    try {
+      const body: Record<string, any> = { message: msg, history: chat }
+      if (researchDrawerTicker) {
+        body.ticker = researchDrawerTicker
+        body.phase  = resolution
+        if (resolution === 'hourly' && drawerSignalData) body.intraday_signal = drawerSignalData
+      }
+      const r = await axios.post('/api/chat', body)
+      setChat([...next, { role: 'assistant', content: r.data.reply }])
+    }
     catch { setChat([...next, { role: 'assistant', content: 'Unable to reach API — is backend running on port 8002?' }]) }
     finally { setChatLoading(false) }
   }
@@ -940,6 +1362,25 @@ export default function App() {
   const metrics = report.data?.metrics ?? null
   const allSigEntries: any[] = Array.isArray(allSignals.data) ? allSignals.data : []
   const FIGURES = (outputs.data?.figures ?? []).filter((f: string) => f !== 'ofi_zscore_chart_filtered.png')
+  // Phase 2 derived state from intraday signals
+  const ids: any[] = intradaySignals.data?.signals ?? []
+  const featureCount: number = intradaySignals.data?.meta?.feature_count ?? 12
+  // Avg |IC| across tickers — measures signal strength regardless of direction
+  const p2AvgAbsIC = ids.length > 0 ? ids.reduce((s: number, x: any) => s + Math.abs(x.mean_ic ?? 0), 0) / ids.length : null
+  const p2AvgSharpe = ids.length > 0 ? ids.reduce((s: number, x: any) => s + (x.sharpe ?? 0), 0) / ids.length : null
+  const p2SignalRate = ids.length > 0 ? ids.filter((x: any) => x.signal !== 'HOLD').length / ids.length * 100 : null
+  const p2TopSignal = ids.length > 0 ? [...ids].sort((a: any, b: any) => Math.abs(b.mean_ic) - Math.abs(a.mean_ic))[0] : null
+  // Research drawer signal data — Phase 2 in hourly, Phase 1 in daily
+  const drawerSignalData = researchDrawerTicker
+    ? (resolution === 'hourly'
+      ? ids.find((s: any) => s.ticker === researchDrawerTicker)
+      : allSigEntries.find((s: any) => s.ticker === researchDrawerTicker))
+    : null
+  // Open research drawer for a ticker (pre-fills chat input)
+  function openResearchDrawer(ticker: string) {
+    setResearchDrawerTicker(ticker)
+    setChatInput(`Explain the microstructure signals for ${ticker}. What does the current data suggest about near-term direction, and what are the key risk factors?`)
+  }
 
   return (
     <ThemeCtx.Provider value={{ S, isDark }}>
@@ -959,15 +1400,62 @@ export default function App() {
         {lightboxImg && (
           <Lightbox src={`/api/outputs/${lightboxImg}`} title={lightboxImg} onClose={() => setLightboxImg(null)} />
         )}
+        {clickedMetricKey && (
+          <MetricExplanationModal metricKey={clickedMetricKey} onClose={() => setClickedMetricKey(null)} />
+        )}
+        {drawerMetricModal && (
+          <MetricExplanationModal metricKey={drawerMetricModal} onClose={() => setDrawerMetricModal(null)} />
+        )}
+        {researchDrawerTicker && (
+          <TickerResearchDrawer
+            ticker={researchDrawerTicker}
+            signalData={drawerSignalData}
+            isPhase2={resolution === 'hourly'}
+            chat={chat}
+            chatInput={chatInput}
+            setChatInput={setChatInput}
+            onSend={sendChat}
+            chatLoading={chatLoading}
+            onClose={() => setResearchDrawerTicker(null)}
+            onMetricClick={setDrawerMetricModal}
+          />
+        )}
+        {/* ── Floating Research Assistant button ── */}
+        {createPortal(
+          <button
+            onClick={() => {
+              const firstTicker = resolution === 'hourly'
+                ? (ids[0]?.ticker ?? allSigEntries[0]?.ticker ?? ALL_TICKERS[0])
+                : (allSigEntries[0]?.ticker ?? ids[0]?.ticker ?? ALL_TICKERS[0])
+              openResearchDrawer(firstTicker)
+            }}
+            style={{ position: 'fixed', bottom: 28, right: 24, zIndex: 200, background: S.primary, color: '#fff', border: 'none', borderRadius: 28, padding: '10px 20px', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 20px rgba(0,0,0,0.35)', transition: 'transform 0.15s, box-shadow 0.15s' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 8px 28px rgba(0,0,0,0.45)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'none'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 20px rgba(0,0,0,0.35)' }}>
+            💬 Research Assistant
+          </button>,
+          document.body
+        )}
+        {/* ── Phase 2 Banner (hourly mode only) ── */}
+        {resolution === 'hourly' && (
+          <div style={{ background: 'linear-gradient(90deg, #0C4A6E 0%, #0891B2 60%, #155E75 100%)', padding: '5px 32px', display: 'flex', alignItems: 'center', gap: 14 }}>
+            <span style={{ color: '#A5F3FC', fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase' }}>⚡ Phase 2 Active</span>
+            <span style={{ color: '#67E8F9', fontSize: 10, opacity: 0.85 }}>Hourly Walk-Forward · VWAP Deviation · Hawkes Intensity · Volume Clock · LGBMRegressor · SHAP Attribution</span>
+            <span style={{ background: '#0891B2', color: '#fff', fontSize: 8, fontWeight: 900, padding: '1px 7px', borderRadius: 3, letterSpacing: '0.1em', marginLeft: 'auto' }}>LIVE</span>
+          </div>
+        )}
         {/* ── Header ── */}
-        <div style={{ background: S.surface, borderBottom: `2px solid ${S.primary}44`, padding: '14px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 100 }}>
+        <div style={{ background: S.surface, borderBottom: `2px solid ${resolution === 'hourly' ? '#0891B2' : S.primary}44`, padding: '14px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 100 }}>
           <div>
-            <h1 style={{ color: S.primary, fontSize: 22, fontWeight: 800, margin: 0, letterSpacing: '-0.02em' }}>
+            <h1 style={{ color: resolution === 'hourly' ? '#0891B2' : S.primary, fontSize: 22, fontWeight: 800, margin: 0, letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>
               AlphaFlow <span style={{ color: S.border }}>·</span>{' '}
               <span style={{ color: S.muted, fontSize: 13, fontWeight: 400 }}>Market Microstructure Alpha Engine</span>
             </h1>
             <p style={{ color: S.muted, fontSize: 11, margin: '2px 0 0', opacity: 0.65 }}>
-              5 signals: OFI Z · Kyle λ · Amihud ILLIQ · C-S Spread · Walk-forward IC · {totalTickerCount} tickers · 2yr daily OHLCV · LightGBM + Groq LLM
+              {resolution === 'daily'
+                ? `Daily Microstructure Screening · ${totalTickerCount} tickers · OFI · Kyle λ · Amihud ILLIQ · Walk-forward IC`
+                : `Intraday Alpha Engine · ${totalTickerCount} tickers · ${featureCount} features · LGBMRegressor · SHAP`
+              }
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -976,15 +1464,41 @@ export default function App() {
               {isDark ? '☀ Light' : '🌙 Dark'}
             </button>
             <span style={{ color: S.muted, fontSize: 11, opacity: 0.55 }}>{clock}</span>
+            {/* Phase 2: Resolution toggle */}
+            <div style={{ display: 'flex', background: S.tag, borderRadius: 8, border: `1px solid ${S.border}`, overflow: 'hidden' }}>
+              {(['daily', 'hourly'] as const).map(r => (
+                <button key={r} onClick={() => setResolution(r)}
+                  style={{ padding: '5px 13px', fontSize: 11, fontWeight: 700, cursor: 'pointer', border: 'none',
+                    background: resolution === r ? (r === 'hourly' ? '#0891B2' : S.primary) : 'transparent',
+                    color: resolution === r ? '#fff' : S.muted, transition: 'all 0.2s' }}>
+                  {r === 'daily' ? '📅 Daily' : '⚡ Hourly'}
+                </button>
+              ))}
+            </div>
             {isRunning && (
               <span style={{ color: S.primary, fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <div style={{ width: 7, height: 7, borderRadius: '50%', background: S.primary, animation: 'pulse 1.4s ease-in-out infinite' }}></div>
                 Pipeline running…
               </span>
             )}
+            {/* Phase 2: Live stream dot */}
+            {resolution === 'hourly' && (
+              <span
+                title={streamConnected
+                  ? 'Live SSE stream connected — receiving bars every 15 seconds. Free tier = synthetic random walk (same data architecture as live). Swap in Alpaca API key for real 15-min delayed IEX data.'
+                  : 'Stream not connected. The browser is attempting to connect to /api/stream via SSE (Server-Sent Events). Free tier uses synthetic data as fallback — no API key needed.'}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11,
+                  color: streamConnected ? S.positiveVal : S.muted, cursor: 'help' }}>
+                <div style={{ width: 7, height: 7, borderRadius: '50%',
+                  background: streamConnected ? '#22C55E' : S.border,
+                  boxShadow: streamConnected ? '0 0 6px #22C55E' : 'none',
+                  animation: streamConnected ? 'pulse 2s ease-in-out infinite' : 'none' }}></div>
+                {streamConnected ? 'Live' : 'Connecting…'}
+              </span>
+            )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: health.data ? '#22C55E' : '#EF4444', boxShadow: health.data ? '0 0 8px #22C55E88' : 'none' }}></div>
-              <span style={{ color: health.data ? '#86EFAC' : '#FCA5A5', fontSize: 12, fontWeight: 600 }}>{health.data ? 'API Online' : 'API Offline'}</span>
+              <span style={{ color: health.data ? S.positiveVal : S.negativeVal, fontSize: 12, fontWeight: 600 }}>{health.data ? 'API Online' : 'API Offline'}</span>
             </div>
           </div>
         </div>
@@ -993,21 +1507,49 @@ export default function App() {
 
           {/* ── Pipeline + Metrics ── */}
           <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16, marginBottom: 16 }}>
-            <Card title="Pipeline Control" accent>
-              <button onClick={() => run.mutate()} disabled={run.isPending || isRunning}
-                style={{ background: run.isPending || isRunning ? S.border : S.runBtn, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 22px', fontSize: 13, fontWeight: 700, cursor: run.isPending || isRunning ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 8, width: '100%', justifyContent: 'center' }}>
-                {run.isPending || isRunning
-                  ? <><div style={{ width: 12, height: 12, border: '2px solid #fff4', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></div>Running…</>
-                  : <><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>Run Pipeline</>}
-              </button>
-              {run.isError && <p style={{ color: '#FCA5A5', fontSize: 11, marginTop: 8, marginBottom: 0 }}>✗ Error — check terminal logs</p>}
-              <button onClick={() => refreshData.mutate()} disabled={refreshData.isPending}
-                style={{ background: refreshDone ? `${S.primary}18` : 'transparent', color: refreshDone ? S.primary : S.muted, border: `1px solid ${refreshDone ? S.primary + '44' : S.border}`, borderRadius: 8, padding: '7px 12px', fontSize: 11, fontWeight: 600, cursor: refreshData.isPending ? 'default' : 'pointer', width: '100%', marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all 0.3s' }}>
-                {refreshData.isPending
-                  ? <><div style={{ width: 10, height: 10, border: `2px solid ${S.muted}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></div>{refreshLabel}</>
-                  : refreshLabel}
-              </button>
-              {history.data?.[0] && (
+            <Card title={resolution === 'daily' ? 'Pipeline Control' : 'Controls'} accent>
+              {resolution === 'daily' && (
+                <>
+                  <button onClick={() => run.mutate()} disabled={run.isPending || isRunning}
+                    style={{ background: run.isPending || isRunning ? S.border : S.runBtn, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 22px', fontSize: 13, fontWeight: 700, cursor: run.isPending || isRunning ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 8, width: '100%', justifyContent: 'center' }}>
+                    {run.isPending || isRunning
+                      ? <><div style={{ width: 12, height: 12, border: '2px solid #fff4', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></div>Running…</>
+                      : <><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>Compute EOD Signals</>}
+                  </button>
+                  {run.isError && <p style={{ color: S.negativeVal, fontSize: 11, marginTop: 8, marginBottom: 0 }}>✗ Error — check terminal logs</p>}
+                </>
+              )}
+              {resolution === 'hourly' && (
+                <>
+                  <button onClick={() => runIntraday.mutate()} disabled={runIntraday.isPending}
+                    style={{ background: runIntraday.isPending ? S.border : S.runBtn, color: '#fff', border: 'none',
+                      borderRadius: 8, padding: '10px 22px', fontSize: 13, fontWeight: 700,
+                      cursor: runIntraday.isPending ? 'default' : 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 8, width: '100%', justifyContent: 'center' }}>
+                    {runIntraday.isPending
+                      ? <><div style={{ width: 12, height: 12, border: '2px solid #fff4', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></div>Running…</>
+                      : '⚡ Run Alpha Engine'}
+                  </button>
+                  <div style={{ marginTop: 8, padding: '6px 10px', background: S.bg, borderRadius: 6, border: `1px solid ${S.border}`, display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <div style={{ width: 7, height: 7, borderRadius: '50%',
+                      background: streamConnected ? '#22C55E' : S.border,
+                      boxShadow: streamConnected ? '0 0 6px #22C55E' : 'none',
+                      animation: streamConnected ? 'pulse 2s ease-in-out infinite' : 'none', flexShrink: 0 }}></div>
+                    <span style={{ color: S.muted, fontSize: 10, lineHeight: 1.4 }}>
+                      {streamConnected ? 'Live stream connected' : 'Stream connecting…'}
+                    </span>
+                  </div>
+                </>
+              )}
+              {resolution === 'daily' && (
+                <button onClick={() => refreshData.mutate()} disabled={refreshData.isPending}
+                  style={{ background: refreshDone ? `${S.primary}18` : 'transparent', color: refreshDone ? S.primary : S.muted, border: `1px solid ${refreshDone ? S.primary + '44' : S.border}`, borderRadius: 8, padding: '7px 12px', fontSize: 11, fontWeight: 600, cursor: refreshData.isPending ? 'default' : 'pointer', width: '100%', marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all 0.3s' }}>
+                  {refreshData.isPending
+                    ? <><div style={{ width: 10, height: 10, border: `2px solid ${S.muted}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></div>{refreshLabel}</>
+                    : refreshLabel}
+                </button>
+              )}
+              {resolution === 'daily' && history.data?.[0] && (
                 <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${S.border}` }}>
                   <p style={{ color: S.muted, fontSize: 10, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Last Run</p>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1031,17 +1573,17 @@ export default function App() {
                     {addingTicker ? '…' : 'Add ↓'}
                   </button>
                 </div>
-                {addTickerMsg && <p style={{ color: addTickerMsg.ok ? '#86EFAC' : '#FCA5A5', fontSize: 10, margin: '5px 0 0', lineHeight: 1.4 }}>{addTickerMsg.text}</p>}
+                {addTickerMsg && <p style={{ color: addTickerMsg.ok ? S.positiveVal : S.negativeVal, fontSize: 10, margin: '5px 0 0', lineHeight: 1.4 }}>{addTickerMsg.text}</p>}
                 <p style={{ color: S.muted, fontSize: 9, margin: '4px 0 0', opacity: 0.45 }}>Downloads 2yr OHLCV · refresh + re-run pipeline</p>
                 {customTickersList.length > 0 && (
                   <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${S.border}` }}>
                     <p style={{ color: S.muted, fontSize: 10, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Custom Tickers</p>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                       {customTickersList.map(t => (
-                        <span key={t} style={{ display: 'flex', alignItems: 'center', gap: 3, background: `${getTickerColor(t)}18`, border: `1px solid ${getTickerColor(t)}44`, borderRadius: 5, padding: '3px 6px' }}>
-                          <span style={{ color: getTickerColor(t), fontWeight: 700, fontSize: 11 }}>{t}</span>
+                        <span key={t} style={{ display: 'flex', alignItems: 'center', gap: 3, background: `${getTickerColor(t, isDark)}18`, border: `1px solid ${getTickerColor(t, isDark)}44`, borderRadius: 5, padding: '3px 6px' }}>
+                          <span style={{ color: getTickerColor(t, isDark), fontWeight: 700, fontSize: 11 }}>{t}</span>
                           <button onClick={() => handleDeleteTicker(t)} title={`Remove ${t}`}
-                            style={{ background: 'transparent', border: 'none', color: '#FCA5A5', cursor: 'pointer', padding: 0, fontSize: 11, lineHeight: 1 }}>✕</button>
+                            style={{ background: 'transparent', border: 'none', color: S.negativeVal, cursor: 'pointer', padding: 0, fontSize: 11, lineHeight: 1 }}>✕</button>
                         </span>
                       ))}
                     </div>
@@ -1050,34 +1592,114 @@ export default function App() {
               </div>
             </Card>
 
-            <Card title="Live Microstructure Metrics — 10 Tickers · 2yr Daily OHLCV (501 bars · 2024-06-27 to 2026-06-26)">
-              {metrics ? (
+            <Card title={(() => {
+              const latestRun = history.data?.[0]
+              const ds = latestRun?.data_start
+              const de = latestRun?.data_end
+              const tb = latestRun?.total_bars
+              const dateStr = ds && de ? `${ds} – ${de}` : '2yr daily OHLCV'
+              const barStr  = tb ? `${tb} bars` : ''
+              return `Live Microstructure Metrics — ${totalTickerCount} Tickers · ${dateStr}${barStr ? ` (${barStr})` : ''}`
+            })()}>
+              {resolution === 'hourly' ? (
+                /* ── Phase 2 Summary Cards (hourly mode) ── */
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+                  {/* Avg |IC| */}
+                  <Tooltip content={<div><p style={{ color: '#38BDF8', fontSize: 11, fontWeight: 700, margin: '0 0 4px' }}>Phase 2 Average |IC|</p><p style={{ color: '#CBD5E1', fontSize: 11, margin: '0 0 5px' }}>Mean absolute Information Coefficient — average of |IC| across all tickers from Phase 2 walk-forward. Measures signal strength regardless of direction (a consistently negative IC is still usable). |IC| &gt; 5% = statistically meaningful (Grinold &amp; Kahn 2000).</p>{ids.length === 0 && <p style={{ color: '#FDE68A', fontSize: 10, margin: '4px 0 0' }}>⚡ Click Run Intraday to populate</p>}</div>}>
+                    <div onClick={() => setClickedMetricKey('IC')} style={{ background: S.bg, border: `1px solid ${p2AvgAbsIC != null && p2AvgAbsIC > 0.05 ? '#166534' : '#854d0e'}`, borderRadius: 8, padding: '12px 14px', cursor: 'pointer' }}>
+                      <p style={{ color: S.muted, fontSize: 10, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Avg |IC| (Phase 2) <span style={{ color: S.primary, opacity: 0.7, fontSize: 9 }}>ⓘ click</span></p>
+                      <p style={{ color: p2AvgAbsIC != null ? (p2AvgAbsIC > 0.05 ? S.positiveVal : S.warnVal) : S.muted, fontSize: 18, fontWeight: 800, margin: '0 0 4px', fontVariantNumeric: 'tabular-nums' }}>
+                        {p2AvgAbsIC != null ? `${(p2AvgAbsIC * 100).toFixed(2)}%` : '—'}
+                      </p>
+                      <p style={{ color: S.muted, fontSize: 9, margin: 0, opacity: 0.5 }}>{p2AvgAbsIC != null ? (p2AvgAbsIC >= 0.05 ? 'meaningful signal' : p2AvgAbsIC >= 0.02 ? 'weak signal' : 'noise level') : 'mean |IC| · avg across tickers'}</p>
+                    </div>
+                  </Tooltip>
+                  {/* Avg Sharpe */}
+                  <Tooltip content={<div><p style={{ color: '#38BDF8', fontSize: 11, fontWeight: 700, margin: '0 0 4px' }}>Average Sharpe Ratio</p><p style={{ color: '#CBD5E1', fontSize: 11, margin: '0 0 5px' }}>Mean annualised Sharpe ratio across all {totalTickerCount} tickers from Phase 2 walk-forward. Any positive Sharpe indicates the model earns more than it risks. &gt; 1 = publishable, &gt; 2 = excellent. Near-zero is expected without live tick data.</p>{ids.length === 0 && <p style={{ color: '#FDE68A', fontSize: 10, margin: '4px 0 0' }}>⚡ Click Run Intraday to populate</p>}</div>}>
+                    <div onClick={() => setClickedMetricKey('Sharpe')} style={{ background: S.bg, border: `1px solid ${p2AvgSharpe != null && p2AvgSharpe >= 0.5 ? '#166534' : S.border}`, borderRadius: 8, padding: '12px 14px', cursor: 'pointer' }}>
+                      <p style={{ color: S.muted, fontSize: 10, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Avg Sharpe <span style={{ color: S.primary, opacity: 0.7, fontSize: 9 }}>ⓘ click</span></p>
+                      <p style={{ color: p2AvgSharpe != null ? (p2AvgSharpe >= 0 ? S.positiveVal : S.negativeVal) : S.muted, fontSize: 18, fontWeight: 800, margin: '0 0 4px', fontVariantNumeric: 'tabular-nums' }}>
+                        {p2AvgSharpe != null ? `${p2AvgSharpe >= 0 ? '+' : ''}${p2AvgSharpe.toFixed(2)}` : '—'}
+                      </p>
+                      <p style={{ color: S.muted, fontSize: 9, margin: 0, opacity: 0.5 }}>annualised · avg across tickers</p>
+                    </div>
+                  </Tooltip>
+                  {/* Signal Rate */}
+                  <Tooltip content={<div><p style={{ color: '#38BDF8', fontSize: 11, fontWeight: 700, margin: '0 0 4px' }}>Signal Rate</p><p style={{ color: '#CBD5E1', fontSize: 11, margin: '0 0 5px' }}>Percentage of tickers with a directional signal (BUY or SELL). Higher = more actionable signals today. Remaining tickers are classified HOLD by cross-sectional IC ranking.</p>{ids.length === 0 && <p style={{ color: '#FDE68A', fontSize: 10, margin: '4px 0 0' }}>⚡ Click Run Intraday to populate</p>}</div>}>
+                    <div style={{ background: S.bg, border: `1px solid ${p2SignalRate != null && p2SignalRate >= 50 ? '#166534' : S.border}`, borderRadius: 8, padding: '12px 14px' }}>
+                      <p style={{ color: S.muted, fontSize: 10, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Signal Rate <span style={{ opacity: 0.4 }}>ⓘ</span></p>
+                      <p style={{ color: p2SignalRate != null ? S.primary : S.muted, fontSize: 18, fontWeight: 800, margin: '0 0 4px', fontVariantNumeric: 'tabular-nums' }}>
+                        {p2SignalRate != null ? `${p2SignalRate.toFixed(0)}%` : '—'}
+                      </p>
+                      <p style={{ color: S.muted, fontSize: 9, margin: 0, opacity: 0.5 }}>
+                        {ids.length > 0 ? `${ids.filter((x: any) => x.signal === 'BUY').length} BUY · ${ids.filter((x: any) => x.signal === 'SELL').length} SELL · ${ids.filter((x: any) => x.signal === 'HOLD').length} HOLD` : 'BUY + SELL tickers / total'}
+                      </p>
+                    </div>
+                  </Tooltip>
+                  {/* Top Signal */}
+                  <Tooltip content={<div><p style={{ color: '#38BDF8', fontSize: 11, fontWeight: 700, margin: '0 0 4px' }}>Top Signal</p><p style={{ color: '#CBD5E1', fontSize: 11, margin: '0 0 5px' }}>Ticker with the highest absolute IC from Phase 2 walk-forward. This is the strongest directional signal in the current universe. Click its card below to open the Research Drawer.</p>{ids.length === 0 && <p style={{ color: '#FDE68A', fontSize: 10, margin: '4px 0 0' }}>⚡ Click Run Intraday to populate</p>}</div>}>
+                    <div style={{ background: S.bg, border: `1px solid ${p2TopSignal ? getTickerColor(p2TopSignal.ticker) + '66' : S.border}`, borderRadius: 8, padding: '12px 14px', cursor: p2TopSignal ? 'pointer' : 'default' }} onClick={() => p2TopSignal && openResearchDrawer(p2TopSignal.ticker)}>
+                      <p style={{ color: S.muted, fontSize: 10, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Top Signal <span style={{ opacity: 0.4 }}>ⓘ</span></p>
+                      {p2TopSignal ? (
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                            <span style={{ color: getTickerColor(p2TopSignal.ticker, isDark), fontSize: 18, fontWeight: 800 }}>{p2TopSignal.ticker}</span>
+                            <SignalBadge sig={p2TopSignal.signal} />
+                          </div>
+                          <p style={{ color: S.muted, fontSize: 9, margin: 0, opacity: 0.5 }}>IC {(Math.abs(p2TopSignal.mean_ic) * 100).toFixed(2)}% · Sharpe {p2TopSignal.sharpe >= 0 ? '+' : ''}{p2TopSignal.sharpe.toFixed(2)}</p>
+                        </>
+                      ) : (
+                        <>
+                          <p style={{ color: S.muted, fontSize: 18, fontWeight: 800, margin: '0 0 4px' }}>—</p>
+                          <p style={{ color: S.muted, fontSize: 9, margin: 0, opacity: 0.5 }}>highest absolute IC ticker</p>
+                        </>
+                      )}
+                    </div>
+                  </Tooltip>
+                </div>
+              ) : metrics ? (
+                /* ── Phase 1 Metric Cards (daily mode) ── */
+                <>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
                   {Object.entries(METRIC_META).map(([key, meta]) => {
-                    const raw = metrics[key]; const val = typeof raw === 'object' ? raw?.value : raw
-                    const isLowIC = key === 'ofi_predictive_ic' && (val == null || Math.abs(val) < 0.05)
-                    const formatted = val != null ? (Math.abs(val) < 0.001 ? Number(val).toExponential(2) : Number(val).toFixed(key === 'ofi_predictive_ic' ? 4 : 2)) : '—'
+                    const raw = metrics[key]
+                    const baseVal = typeof raw === 'object' ? raw?.value : raw
+                    const val = baseVal
+                    const isLowIC = key === 'ofi_predictive_ic' && (val == null || Math.abs(val ?? 0) < 0.05)
+                    const icValueColor = isLowIC ? S.warnVal : S.positiveVal
+                    const icBorderColor = isLowIC ? S.warnVal : S.primary
+                    // IC always shown as % for readability; other metrics use scientific notation when < 0.001
+                    const formatted = val != null
+                      ? key === 'ofi_predictive_ic'
+                        ? `${(Number(val) * 100).toFixed(2)}%`
+                        : (Math.abs(val) < 0.001 ? Number(val).toExponential(2) : Number(val).toFixed(2))
+                      : '—'
                     return (
                       <Tooltip key={key} content={
                         <div>
                           <p style={{ color: '#38BDF8', fontSize: 11, fontWeight: 700, margin: '0 0 5px' }}>{meta.label}</p>
                           <p style={{ color: '#475569', fontSize: 10, fontFamily: 'monospace', margin: '0 0 6px', background: '#050D20', padding: '3px 7px', borderRadius: 4 }}>{meta.formula}</p>
                           <p style={{ color: '#CBD5E1', fontSize: 11, margin: '0 0 5px', lineHeight: 1.5 }}>{meta.help}</p>
-                          {isLowIC && <p style={{ color: '#FCA5A5', fontSize: 10, margin: '4px 0 0' }}>⚠ Phase 1 limit — Phase 2 tick data targets IC &gt; 0.05</p>}
+                          {isLowIC && <p style={{ color: S.negativeVal, fontSize: 10, margin: '4px 0 0' }}>⚠ Daily Microstructure limit — switch to ⚡ Hourly for IC &gt; 0.05</p>}
                           <p style={{ color: '#334155', fontSize: 9, margin: '5px 0 0' }}>📚 {meta.ref}</p>
                         </div>
                       }>
-                        <div style={{ background: S.bg, border: `1px solid ${isLowIC ? '#713f12' : S.border}`, borderRadius: 8, padding: '12px 14px', transition: 'transform 0.15s ease, box-shadow 0.15s ease' }}
+                        <div
+                          onClick={() => setClickedMetricKey(key)}
+                          style={{ background: S.bg, border: `1px solid ${key === 'ofi_predictive_ic' ? icBorderColor : S.border}`, borderRadius: 8, padding: '12px 14px', cursor: 'pointer', transition: 'transform 0.15s ease, box-shadow 0.15s ease' }}
                           onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLDivElement).style.boxShadow = '0 6px 20px rgba(0,0,0,0.18)' }}
                           onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'none'; (e.currentTarget as HTMLDivElement).style.boxShadow = 'none' }}>
                           <p style={{ color: S.muted, fontSize: 10, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{meta.label} <span style={{ opacity: 0.4 }}>ⓘ</span></p>
-                          <p style={{ color: isLowIC ? S.muted : S.primary, fontSize: 18, fontWeight: 800, margin: '0 0 4px', fontVariantNumeric: 'tabular-nums', opacity: isLowIC ? 0.4 : 1 }}>{formatted}</p>
-                          <p style={{ color: S.muted, fontSize: 9, margin: 0, opacity: 0.5 }}>{meta.unit}</p>
+                          <p style={{ color: key === 'ofi_predictive_ic' ? icValueColor : S.primary, fontSize: 18, fontWeight: 800, margin: '0 0 4px', fontVariantNumeric: 'tabular-nums' }}>{formatted}</p>
+                          <p style={{ color: S.muted, fontSize: 9, margin: '0 0 3px', opacity: 0.5 }}>{meta.unit}</p>
+                          <p style={{ color: S.primary, fontSize: 8, margin: 0, opacity: 0.55 }}>Click for explanation ›</p>
                         </div>
                       </Tooltip>
                     )
                   })}
                 </div>
+                <p style={{ color: S.muted, fontSize: 9, margin: '6px 0 0', opacity: 0.5, lineHeight: 1.4 }}>† Daily IC ≈ 0 is expected — resolves at hourly resolution (Intraday Alpha Engine)</p>
+                </>
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
                   {Object.entries(METRIC_META).map(([k, m]) => (
@@ -1090,8 +1712,8 @@ export default function App() {
                 </div>
               )}
 
-              {/* ── Combined Panel: Signal Distribution + Portfolio Backtest ── */}
-              {allSigEntries.length > 0 && (() => {
+              {/* ── Combined Panel: Signal Distribution + Portfolio Backtest (daily mode only) ── */}
+              {resolution === 'daily' && allSigEntries.length > 0 && (() => {
                 const buys  = allSigEntries.filter((s: any) => s.signal === 'BUY').length
                 const sells = allSigEntries.filter((s: any) => s.signal === 'SELL').length
                 const holds = allSigEntries.length - buys - sells
@@ -1120,8 +1742,8 @@ export default function App() {
                         <p style={{ color: S.sellText, fontSize: 8, margin: '3px 0 0', fontWeight: 700, letterSpacing: '0.08em' }}>SELL</p>
                       </div>
                       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4, paddingLeft: 4 }}>
-                        {topTicker && <p style={{ color: S.muted, fontSize: 9, margin: 0 }}>▲ <span style={{ color: '#86EFAC', fontWeight: 700 }}>{topTicker.ticker}</span> OFI {Number(topTicker.ofi).toFixed(3)}</p>}
-                        {bottomTicker && <p style={{ color: S.muted, fontSize: 9, margin: 0 }}>▼ <span style={{ color: '#FCA5A5', fontWeight: 700 }}>{bottomTicker.ticker}</span> OFI {Number(bottomTicker.ofi).toFixed(3)}</p>}
+                        {topTicker && <p style={{ color: S.muted, fontSize: 9, margin: 0 }}>▲ <span style={{ color: S.positiveVal, fontWeight: 700 }}>{topTicker.ticker}</span> OFI {Number(topTicker.ofi).toFixed(3)}</p>}
+                        {bottomTicker && <p style={{ color: S.muted, fontSize: 9, margin: 0 }}>▼ <span style={{ color: S.negativeVal, fontWeight: 700 }}>{bottomTicker.ticker}</span> OFI {Number(bottomTicker.ofi).toFixed(3)}</p>}
                         <p style={{ color: S.muted, fontSize: 9, margin: 0 }}>Universe: <span style={{ color: S.text, fontWeight: 600 }}>{allSigEntries.length} tickers</span> · LightGBM + Groq LLM</p>
                       </div>
                     </div>
@@ -1130,33 +1752,33 @@ export default function App() {
                     {portSharpe != null && (
                       <>
                         <p style={{ color: S.muted, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 8px', opacity: 0.6 }}>
-                          Long-Short Backtest · Top-2 OFI Long / Bottom-2 Short · Walk-forward
+                          Long-Short Backtest (Phase 1) · Top-2 OFI Long / Bottom-2 Short · Walk-forward
                         </p>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-                          <Tooltip content={<div><p style={{ color: '#38BDF8', fontSize: 11, fontWeight: 700, margin: '0 0 4px' }}>Sharpe Ratio</p><p style={{ color: '#475569', fontSize: 10, fontFamily: 'monospace', margin: '0 0 5px' }}>Sharpe = √252 × μ / σ (annualised)</p><p style={{ color: '#CBD5E1', fontSize: 11, margin: 0 }}>Risk-adjusted return. A Sharpe &gt; 1 is good; &gt; 2 is excellent. Negative = strategy loses value after accounting for volatility. Phase 1 IC ≈ 0 explains negative Sharpe here.</p><p style={{ color: '#334155', fontSize: 9, margin: '4px 0 0' }}>📚 Sharpe (1994) J. Portfolio Mgmt.</p></div>}>
+                          <Tooltip content={<div><p style={{ color: '#38BDF8', fontSize: 11, fontWeight: 700, margin: '0 0 4px' }}>Sharpe Ratio</p><p style={{ color: '#475569', fontSize: 10, fontFamily: 'monospace', margin: '0 0 5px' }}>Sharpe = √252 × μ / σ (annualised)</p><p style={{ color: '#CBD5E1', fontSize: 11, margin: 0 }}>Risk-adjusted return. Currently <strong style={{color: portSharpe >= 0 ? '#86EFAC' : '#FCA5A5'}}>{portSharpe >= 0 ? '+' : ''}{portSharpe.toFixed(3)}</strong>. Sharpe &gt; 1 = publishable; &gt; 2 = excellent. Values near zero are expected at daily resolution — OFI signal half-life is ~30 min.</p><p style={{ color: '#334155', fontSize: 9, margin: '4px 0 0' }}>📚 Sharpe (1994) J. Portfolio Mgmt.</p></div>}>
                             <div style={{ background: S.bg, border: `1px solid ${portSharpe >= 0 ? S.border : '#7f1d1d55'}`, borderRadius: 7, padding: '8px 10px', cursor: 'help' }}>
                               <p style={{ color: S.muted, fontSize: 8, margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Sharpe <span style={{ opacity: 0.4 }}>ⓘ</span></p>
-                              <p style={{ color: portSharpe >= 0 ? '#86EFAC' : '#FCA5A5', fontSize: 15, fontWeight: 800, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{portSharpe >= 0 ? '+' : ''}{portSharpe.toFixed(3)}</p>
+                              <p style={{ color: portSharpe >= 0 ? S.positiveVal : S.negativeVal, fontSize: 15, fontWeight: 800, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{portSharpe >= 0 ? '+' : ''}{portSharpe.toFixed(3)}</p>
                               <p style={{ color: S.muted, fontSize: 8, margin: '2px 0 0', opacity: 0.45 }}>annualised</p>
                             </div>
                           </Tooltip>
-                          <Tooltip content={<div><p style={{ color: '#38BDF8', fontSize: 11, fontWeight: 700, margin: '0 0 4px' }}>Sortino Ratio</p><p style={{ color: '#475569', fontSize: 10, fontFamily: 'monospace', margin: '0 0 5px' }}>Sortino = √252 × μ / σ_downside</p><p style={{ color: '#CBD5E1', fontSize: 11, margin: 0 }}>Like Sharpe but only penalises DOWNSIDE volatility — upside variance is good! A Sortino &gt; 2 is strong. Better metric than Sharpe for asymmetric alpha strategies.</p><p style={{ color: '#334155', fontSize: 9, margin: '4px 0 0' }}>📚 Sortino &amp; van der Meer (1991) J. Portfolio Mgmt.</p></div>}>
+                          <Tooltip content={<div><p style={{ color: '#38BDF8', fontSize: 11, fontWeight: 700, margin: '0 0 4px' }}>Sortino Ratio</p><p style={{ color: '#475569', fontSize: 10, fontFamily: 'monospace', margin: '0 0 5px' }}>Sortino = √252 × μ / σ_downside</p><p style={{ color: '#CBD5E1', fontSize: 11, margin: 0 }}>Only penalises DOWNSIDE volatility — upside swings do not count against you. Currently <strong style={{color: (portSortino ?? 0) >= 0 ? '#86EFAC' : '#FCA5A5'}}>{portSortino != null ? `${portSortino >= 0 ? '+' : ''}${portSortino.toFixed(3)}` : 'n/a'}</strong>. Benchmarks: &gt;0 = positive risk-adjusted direction; 0.5–1.0 = developing strategy; 1.0–2.0 = solid; &gt;2.0 = strong asymmetric alpha. Phase 1 daily IC ≈ 0 explains values near zero — expect improvement in Phase 2 hourly walk-forward.</p><p style={{ color: '#334155', fontSize: 9, margin: '4px 0 0' }}>📚 Sortino &amp; van der Meer (1991) J. Portfolio Mgmt.</p></div>}>
                             <div style={{ background: S.bg, border: `1px solid ${(portSortino ?? 0) >= 0 ? S.border : '#7f1d1d55'}`, borderRadius: 7, padding: '8px 10px', cursor: 'help' }}>
                               <p style={{ color: S.muted, fontSize: 8, margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Sortino <span style={{ opacity: 0.4 }}>ⓘ</span></p>
-                              <p style={{ color: (portSortino ?? 0) >= 0 ? '#86EFAC' : '#FCA5A5', fontSize: 15, fontWeight: 800, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{portSortino != null ? `${portSortino >= 0 ? '+' : ''}${portSortino.toFixed(3)}` : '—'}</p>
+                              <p style={{ color: (portSortino ?? 0) >= 0 ? S.positiveVal : S.negativeVal, fontSize: 15, fontWeight: 800, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{portSortino != null ? `${portSortino >= 0 ? '+' : ''}${portSortino.toFixed(3)}` : '—'}</p>
                               <p style={{ color: S.muted, fontSize: 8, margin: '2px 0 0', opacity: 0.45 }}>downside-adj</p>
                             </div>
                           </Tooltip>
-                          <Tooltip content={<div><p style={{ color: '#38BDF8', fontSize: 11, fontWeight: 700, margin: '0 0 4px' }}>Max Drawdown</p><p style={{ color: '#475569', fontSize: 10, fontFamily: 'monospace', margin: '0 0 5px' }}>MDD = min((E_t − peak_t) / peak_t)</p><p style={{ color: '#CBD5E1', fontSize: 11, margin: 0 }}>Worst peak-to-trough loss in the equity curve. −12% means the strategy lost 12% from its best point. Used for position sizing: Kelly/half-Kelly require knowing max drawdown.</p><p style={{ color: '#334155', fontSize: 9, margin: '4px 0 0' }}>📚 Grinold &amp; Kahn (2000) Active Portfolio Mgmt. Ch.14</p></div>}>
-                            <div style={{ background: S.bg, border: `1px solid ${(portMDD ?? 0) > -0.1 ? S.border : '#7f1d1d55'}`, borderRadius: 7, padding: '8px 10px', cursor: 'help' }}>
+                          <Tooltip content={<div><p style={{ color: '#38BDF8', fontSize: 11, fontWeight: 700, margin: '0 0 4px' }}>Max Drawdown</p><p style={{ color: '#475569', fontSize: 10, fontFamily: 'monospace', margin: '0 0 5px' }}>MDD = min((E_t − peak_t) / peak_t)</p><p style={{ color: '#CBD5E1', fontSize: 11, margin: 0 }}>Worst peak-to-trough loss in the equity curve. Currently <strong style={{color: portMDD != null ? (Math.abs(portMDD) < 0.1 ? '#86EFAC' : Math.abs(portMDD) < 0.25 ? '#FDE68A' : '#FCA5A5') : S.muted}}>{portMDD != null ? `-${(Math.abs(portMDD)*100).toFixed(1)}%` : 'n/a'}</strong>. Benchmarks for systematic strategies: &lt;10% = excellent; 10–25% = acceptable; &gt;25% = needs improvement. At daily IC ≈ 0 the equity curve is essentially a random walk — 18–20% DD is expected and will shrink when Phase 2 hourly IC &gt; 5% provides genuine directional edge.</p><p style={{ color: '#334155', fontSize: 9, margin: '4px 0 0' }}>📚 Grinold &amp; Kahn (2000) Active Portfolio Mgmt. Ch.14</p></div>}>
+                            <div style={{ background: S.bg, border: `1px solid ${portMDD == null ? S.border : Math.abs(portMDD) < 0.1 ? '#16653488' : Math.abs(portMDD) < 0.25 ? '#854d0e55' : '#7f1d1d55'}`, borderRadius: 7, padding: '8px 10px', cursor: 'help' }}>
                               <p style={{ color: S.muted, fontSize: 8, margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Max DD <span style={{ opacity: 0.4 }}>ⓘ</span></p>
-                              <p style={{ color: (portMDD ?? 0) > -0.1 ? '#FDE68A' : '#FCA5A5', fontSize: 15, fontWeight: 800, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{portMDD != null ? `${(portMDD * 100).toFixed(1)}%` : '—'}</p>
-                              <p style={{ color: S.muted, fontSize: 8, margin: '2px 0 0', opacity: 0.45 }}>peak-to-trough</p>
+                              <p style={{ color: portMDD == null ? S.muted : Math.abs(portMDD) < 0.1 ? S.positiveVal : Math.abs(portMDD) < 0.25 ? S.warnVal : S.negativeVal, fontSize: 15, fontWeight: 800, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{portMDD != null ? `-${(Math.abs(portMDD) * 100).toFixed(1)}%` : '—'}</p>
+                              <p style={{ color: S.muted, fontSize: 8, margin: '2px 0 0', opacity: 0.45 }}>peak-to-trough loss</p>
                             </div>
                           </Tooltip>
                         </div>
                         <p style={{ color: S.muted, fontSize: 8, margin: '8px 0 0', opacity: 0.4, lineHeight: 1.5 }}>
-                          ⚠ Phase 1 note: Sharpe and Sortino are negative because OFI IC ≈ 0 on daily bars — signal has no predictive power at this resolution. Phase 2 (tick data) targets Sharpe &gt; 0.5 and IC &gt; 0.05.
+                          Phase 1 daily OFI IC ≈ 0 — signal half-life is ~30 min, daily bars cannot resolve it. Sharpe shown in best-direction (long or contrarian). Run ⚡ Hourly mode for Phase 2 IC &gt; 5% target.
                         </p>
                       </>
                     )}
@@ -1166,90 +1788,251 @@ export default function App() {
             </Card>
           </div>
 
-          {/* ── Signal Cards ── */}
-          {allSigEntries.length > 0 && (
-            <Card
-              title={`Ticker Signal Cards — ${allSigEntries.length} Tickers · Latest Run · All 5 Microstructure Signals`}
-              right={<span style={{ color: S.muted, fontSize: 10, opacity: 0.55 }}>Click card → pre-fills chat input (press Enter to send) ›</span>}
-            >
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))', gap: 10 }}>
-                {allSigEntries.map((s: any) => {
-                  const [name, sector] = dynTickerNames[s.ticker] ?? [s.ticker, 'Custom']
-                  const isCustom = customTickersList.includes(s.ticker)
-                  const ofi = Number(s.ofi ?? 0)
-                  const ofiDir = ofi > 0.15 ? '▲' : ofi < -0.15 ? '▼' : '→'
-                  const ofiColor = ofi > 0.15 ? '#86EFAC' : ofi < -0.15 ? '#FCA5A5' : S.muted
-                  const sp = Number(s.eff_spread_bps ?? 0)
-                  const spColor = sp > 50 ? '#FCA5A5' : sp > 25 ? '#FDE68A' : '#86EFAC'
-                  const sharpe = Number(s.sharpe ?? 0)
-                  const sharpeColor = sharpe >= 1 ? '#86EFAC' : sharpe >= 0 ? '#FDE68A' : '#FCA5A5'
-                  const borderCol = getTickerColor(s.ticker)
-                  // Clean up LLM reason — strip verbose API error JSON
-                  const rawReason = s.llm_reason ?? ''
-                  const llmReason = rawReason.startsWith('LLM unavailable') || rawReason.startsWith('Groq')
-                    ? rawReason.replace(/LLM unavailable:\s*Error code:\s*\d+\s*-\s*\{.*\}/s, 'Groq rate limit — re-run when tokens reset')
-                         .replace(/LLM unavailable:\s*/g, '')
-                         .slice(0, 120)
-                    : rawReason.slice(0, 120)
-                  return (
-                    <div key={s.ticker}
-                      style={{ background: S.cardBg, border: `1px solid ${borderCol}`, borderRadius: 9, padding: '11px 13px', cursor: 'pointer', transition: 'transform 0.1s, box-shadow 0.1s', display: 'flex', flexDirection: 'column' }}
-                      onClick={() => prefillChat(`What do the microstructure signals say about ${s.ticker} right now? Reference exact values and explain what they mean for ${name}.`)}
-                      onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLDivElement).style.boxShadow = `0 4px 20px ${S.primary}22` }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'none'; (e.currentTarget as HTMLDivElement).style.boxShadow = 'none' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                        <div>
-                          <span style={{ color: S.text, fontSize: 15, fontWeight: 800 }}>{s.ticker}</span>
-                          <p style={{ color: S.muted, fontSize: 9, margin: '1px 0 0', opacity: 0.7 }}>{name}</p>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                          <SignalBadge sig={s.signal ?? 'HOLD'} />
-                          {isCustom && (
-                            <button
-                              onClick={e => { e.stopPropagation(); handleDeleteTicker(s.ticker) }}
-                              title={`Remove ${s.ticker} (custom ticker)`}
-                              style={{ background: '#7f1d1d44', border: '1px solid #FCA5A555', color: '#FCA5A5', borderRadius: 5, width: 18, height: 18, fontSize: 10, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}>
-                              ✕
-                            </button>
-                          )}
-                        </div>
+          {/* ── Phase 1: Daily Ticker Cards (collapsible, daily mode only) ── */}
+          {resolution === 'daily' && (
+            <div style={{ marginBottom: 16 }}>
+              {allSigEntries.length === 0 ? (
+                <div style={{ background: S.cardBg, border: `1px dashed ${S.border}`, borderRadius: 10, padding: '20px 24px', textAlign: 'center' }}>
+                  <p style={{ color: S.text, fontWeight: 600, fontSize: 13, margin: '0 0 6px' }}>No Daily Signals Yet</p>
+                  <p style={{ color: S.muted, fontSize: 11, margin: 0 }}>
+                    Click <strong style={{ color: S.primary }}>Compute EOD Signals</strong> to run the Phase 1 microstructure pipeline across {totalTickerCount} tickers.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* Toggle header */}
+                  <div
+                    onClick={() => setTickerCardsExpanded(e => !e)}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: S.cardBg, border: `1px solid ${S.border}`, borderRadius: tickerCardsExpanded ? '10px 10px 0 0' : 10, padding: '10px 16px', cursor: 'pointer', userSelect: 'none', transition: 'background 0.15s' }}>
+                    <span style={{ color: S.text, fontWeight: 700, fontSize: 12 }}>Daily Microstructure Signals — {allSigEntries.length} Tickers</span>
+                    <span style={{ color: S.muted, fontSize: 10 }}>{tickerCardsExpanded ? '▲ Collapse' : '▼ Expand'}</span>
+                  </div>
+                  {/* Cards grid */}
+                  {tickerCardsExpanded && (
+                    <div style={{ border: `1px solid ${S.border}`, borderTop: 'none', borderRadius: '0 0 10px 10px', padding: 12, background: S.surface }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))', gap: 8 }}>
+                        {allSigEntries.map((s: any) => {
+                          const sig: string = s.signal ?? 'HOLD'
+                          const sigColor = sig === 'BUY' ? S.positiveVal : sig === 'SELL' ? S.negativeVal : S.warnVal
+                          const sigBg = sig === 'BUY' ? `${S.positiveVal}18` : sig === 'SELL' ? `${S.negativeVal}18` : `${S.warnVal}18`
+                          const ofi = typeof s.ofi === 'number' ? s.ofi : parseFloat(s.ofi ?? '0') || 0
+                          const ofiColor = ofi > 0.02 ? S.positiveVal : ofi < -0.02 ? S.negativeVal : S.muted
+                          const companyName = dynTickerNames[s.ticker]?.[0] ?? s.ticker
+                          const ic = typeof s.ic_value === 'number' ? s.ic_value : parseFloat(s.ic_value ?? '0') || 0
+                          const sharpe = typeof s.sharpe === 'number' ? s.sharpe : parseFloat(s.sharpe ?? '0') || 0
+                          return (
+                            <div
+                              key={s.ticker}
+                              onClick={() => openResearchDrawer(s.ticker)}
+                              title={`Open Research Drawer for ${s.ticker}`}
+                              style={{ position: 'relative', background: S.cardBg, border: `1.5px solid ${S.border}`, borderLeft: `3px solid ${sigColor}`, borderRadius: 9, padding: '10px 12px', cursor: 'pointer', transition: 'transform 0.15s' }}
+                              onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)' }}
+                              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'none' }}
+                            >
+                              {customTickersList.includes(s.ticker) && (
+                                <button
+                                  onClick={e => { e.stopPropagation(); handleDeleteTicker(s.ticker) }}
+                                  title={`Remove ${s.ticker} from universe`}
+                                  style={{ position: 'absolute', top: 4, right: 4, background: 'transparent', border: 'none', color: S.negativeVal, cursor: 'pointer', fontSize: 11, lineHeight: 1, padding: '0 2px' }}
+                                >✕</button>
+                              )}
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+                                <span style={{ color: S.text, fontWeight: 800, fontSize: 13 }}>{s.ticker}</span>
+                                <span style={{ background: sigBg, color: sigColor, border: `1px solid ${sigColor}55`, borderRadius: 4, padding: '1px 6px', fontSize: 9, fontWeight: 800, letterSpacing: '0.06em' }}>{sig}</span>
+                              </div>
+                              <p style={{ color: S.muted, fontSize: 9, margin: '0 0 7px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{companyName}</p>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 6px' }}>
+                                <div>
+                                  <p style={{ color: S.muted, fontSize: 8, margin: '0 0 1px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>OFI</p>
+                                  <p style={{ color: ofiColor, fontSize: 11, fontWeight: 700, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{ofi.toFixed(3)}</p>
+                                </div>
+                                <div>
+                                  <p style={{ color: S.muted, fontSize: 8, margin: '0 0 1px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Spread</p>
+                                  <p style={{ color: S.text, fontSize: 11, fontWeight: 700, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{typeof s.eff_spread_bps === 'number' ? s.eff_spread_bps.toFixed(1) : '—'}<span style={{ color: S.muted, fontSize: 8 }}> bps</span></p>
+                                </div>
+                                <div>
+                                  <p style={{ color: S.muted, fontSize: 8, margin: '0 0 1px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Kyle λ</p>
+                                  <p style={{ color: S.text, fontSize: 11, fontWeight: 700, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{typeof s.kyle_lambda === 'number' ? fmtSmall(s.kyle_lambda) : '—'}</p>
+                                </div>
+                                <div>
+                                  <p style={{ color: S.muted, fontSize: 8, margin: '0 0 1px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>IC</p>
+                                  <p style={{ color: Math.abs(ic) > 0.03 ? S.positiveVal : S.muted, fontSize: 11, fontWeight: 700, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{(ic * 100).toFixed(2)}<span style={{ color: S.muted, fontSize: 8 }}>%</span></p>
+                                </div>
+                                <div>
+                                  <p style={{ color: S.muted, fontSize: 8, margin: '0 0 1px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>ILLIQ</p>
+                                  <p style={{ color: S.text, fontSize: 11, fontWeight: 700, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{typeof s.amihud_illiq === 'number' ? fmtSmall(s.amihud_illiq) : '—'}</p>
+                                </div>
+                                <div>
+                                  <p style={{ color: S.muted, fontSize: 8, margin: '0 0 1px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Sharpe</p>
+                                  <p style={{ color: sharpe >= 0 ? S.positiveVal : S.negativeVal, fontSize: 11, fontWeight: 700, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{sharpe >= 0 ? '+' : ''}{sharpe.toFixed(2)}</p>
+                                </div>
+                              </div>
+                              {s.llm_reason && (
+                                <p style={{ color: S.muted, fontSize: 8, margin: '6px 0 0', lineHeight: 1.4, fontStyle: 'italic', opacity: 0.7, maxHeight: 28, overflow: 'hidden' }}>
+                                  {String(s.llm_reason).slice(0, 80)}{String(s.llm_reason).length > 80 ? '…' : ''}
+                                </p>
+                              )}
+                            </div>
+                          )
+                        })}
                       </div>
-                      <div style={{ display: 'inline-block', background: `${SECTOR_COLOR[sector] ?? S.border}18`, border: `1px solid ${SECTOR_COLOR[sector] ?? S.border}44`, borderRadius: 4, padding: '1px 6px', marginBottom: 7 }}>
-                        <span style={{ color: SECTOR_COLOR[sector] ?? S.muted, fontSize: 8, fontWeight: 600, letterSpacing: '0.06em' }}>{sector}</span>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '3px 6px' }}>
-                        <Tooltip content={TIP_OFI}><span style={{ color: S.muted, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.06em' }}>OFI Z <span style={{ opacity: 0.45 }}>ⓘ</span></span></Tooltip>
-                        <span style={{ color: ofiColor, fontSize: 10, textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{ofiDir} {ofi.toFixed(3)}</span>
-                        <Tooltip content={TIP_SPREAD}><span style={{ color: S.muted, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Spread <span style={{ opacity: 0.45 }}>ⓘ</span></span></Tooltip>
-                        <span style={{ color: spColor, fontSize: 10, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{sp.toFixed(1)} bps</span>
-                        <Tooltip content={TIP_KYLE}><span style={{ color: S.muted, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Kyle λ <span style={{ opacity: 0.45 }}>ⓘ</span></span></Tooltip>
-                        <span style={{ color: S.text, fontSize: 10, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{Number(s.kyle_lambda ?? 0).toExponential(1)}</span>
-                        <Tooltip content={TIP_AMIHUD}><span style={{ color: S.muted, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Amihud <span style={{ opacity: 0.45 }}>ⓘ</span></span></Tooltip>
-                        <span style={{ color: S.text, fontSize: 10, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{Number(s.amihud_illiq ?? 0).toExponential(1)}</span>
-                        <Tooltip content={TIP_SHARPE}><span style={{ color: S.muted, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Sharpe <span style={{ opacity: 0.45 }}>ⓘ</span></span></Tooltip>
-                        <span style={{ color: sharpeColor, fontSize: 10, textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{sharpe >= 0 ? '+' : ''}{sharpe.toFixed(2)}</span>
-                      </div>
-                      {llmReason && (
-                        <p style={{
-                          color: (llmReason.includes('rate limit') || llmReason.includes('auth') || llmReason.includes('error')) ? '#FDE68A' : S.muted,
-                          fontSize: 9, margin: '7px 0 0', paddingTop: 6, borderTop: `1px solid ${S.border}33`,
-                          lineHeight: 1.4, fontStyle: 'italic', opacity: 0.85,
-                          overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                        }}>{llmReason}</p>
-                      )}
-                      <p style={{ color: S.muted, fontSize: 8, margin: 'auto 0 0', paddingTop: 5, textAlign: 'right', opacity: 0.25 }}>click → chat</p>
                     </div>
-                  )
-                })}
-              </div>
-              <p style={{ color: S.muted, fontSize: 10, margin: '12px 0 0', opacity: 0.45 }}>
-                Sharpe is computed per-ticker over walk-forward test windows (annualised). Negative Sharpe = stock declined in the test period — not a signal quality measure. Phase 2 (tick data) targets portfolio Sharpe &gt; 1.
-              </p>
-            </Card>
+                  )}
+                </>
+              )}
+            </div>
           )}
 
-          {/* ── Charts ── */}
-          <Card title="Research Output Charts — Click to Analyse · Hover for Description">
+          {/* ── Phase 2: Intraday Panel (full-width, hourly mode only) ── */}
+          {resolution === 'hourly' && (
+            <>
+              {/* Section 1: Full-width intraday signal cards */}
+              <Card
+                title={
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>⚡ Intraday Alpha Engine · Signals</span>
+                    <InfoIcon term="Walk-Forward" />
+                    <span style={{ color: S.muted, fontSize: 9, fontWeight: 400 }}>
+                      Hourly · {featureCount} features · <InfoTip term="LGBMRegressor">LGBMRegressor</InfoTip> · Walk-Forward CV
+                    </span>
+                  </span>
+                }
+                right={
+                  <button onClick={() => runIntraday.mutate()} disabled={runIntraday.isPending}
+                    title="Runs the Phase 2 intraday pipeline: fetches hourly bars per ticker, computes microstructure features, then runs walk-forward LGBMRegressor. Takes 30–120 seconds."
+                    style={{ background: runIntraday.isPending ? S.border : S.runBtn, color: '#fff', border: 'none',
+                      borderRadius: 6, padding: '5px 16px', fontSize: 11, fontWeight: 700,
+                      cursor: runIntraday.isPending ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {runIntraday.isPending
+                      ? <><div style={{ width: 10, height: 10, border: '2px solid #fff4', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></div>Running…</>
+                      : '⚡ Run Alpha Engine'}
+                  </button>
+                }>
+                {ids.length > 0 ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
+                    {ids.map((s: any) => (
+                      <div key={s.ticker}
+                        onClick={() => { setSelectedShapTicker(s.ticker); openResearchDrawer(s.ticker) }}
+                        title={`Click to open Research Drawer for ${s.ticker}. IC = ${(s.mean_ic*100).toFixed(2)}% · Sharpe = ${s.sharpe.toFixed(2)}`}
+                        style={{ background: S.cardBg, border: `2px solid ${selectedShapTicker === s.ticker ? S.primary : S.border}`,
+                          borderRadius: 10, padding: '12px 14px', cursor: 'pointer', transition: 'all 0.2s' }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLDivElement).style.boxShadow = `0 6px 20px ${S.primary}22` }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'none'; (e.currentTarget as HTMLDivElement).style.boxShadow = 'none' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                          <span style={{ color: getTickerColor(s.ticker, isDark), fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em' }}>{s.ticker}</span>
+                          <span style={{
+                            background: s.signal === 'BUY' ? S.buyBg : s.signal === 'SELL' ? S.sellBg : S.holdBg,
+                            color: s.signal === 'BUY' ? S.buyText : s.signal === 'SELL' ? S.sellText : S.holdText,
+                            borderRadius: 4, padding: '2px 8px', fontSize: 10, fontWeight: 700, letterSpacing: '0.05em' }}>{s.signal}</span>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '3px 6px', marginBottom: 6 }}>
+                          <InfoTip term="IC"><span style={{ color: S.muted, fontSize: 9 }}>IC</span></InfoTip>
+                          <span style={{ color: Math.abs(s.mean_ic) > 0.05 ? S.positiveVal : S.warnVal, fontSize: 11, fontWeight: 700, textAlign: 'right' }}>
+                            {(s.mean_ic * 100).toFixed(2)}%
+                          </span>
+                          <InfoTip term="Sharpe"><span style={{ color: S.muted, fontSize: 9 }}>Sharpe</span></InfoTip>
+                          <span style={{ color: s.sharpe >= 0 ? S.positiveVal : S.negativeVal, fontSize: 11, fontWeight: 700, textAlign: 'right' }}>
+                            {(s.sharpe >= 0 ? '+' : '') + s.sharpe.toFixed(2)}
+                          </span>
+                          {s.sortino != null && <>
+                            <span style={{ color: S.muted, fontSize: 9 }}>Sortino</span>
+                            <span style={{ color: s.sortino >= 0 ? S.positiveVal : S.negativeVal, fontSize: 11, fontWeight: 700, textAlign: 'right' }}>
+                              {(s.sortino >= 0 ? '+' : '') + s.sortino.toFixed(2)}
+                            </span>
+                          </>}
+                          {s.max_drawdown != null && <>
+                            <span style={{ color: S.muted, fontSize: 9 }}>Max DD</span>
+                            <span style={{ color: Math.abs(s.max_drawdown) < 0.1 ? S.positiveVal : Math.abs(s.max_drawdown) < 0.2 ? S.warnVal : S.negativeVal, fontSize: 11, fontWeight: 700, textAlign: 'right' }}>
+                              -{(Math.abs(s.max_drawdown) * 100).toFixed(1)}%
+                            </span>
+                          </>}
+                        </div>
+                        {s.data_start && s.data_end && (
+                          <p style={{ color: S.muted, fontSize: 8, margin: '4px 0 2px', opacity: 0.5, lineHeight: 1.4 }}>
+                            {s.data_start} – {s.data_end}<br />{s.n_bars} bars · {s.n_folds} folds
+                          </p>
+                        )}
+                        <p style={{ color: S.muted, fontSize: 9, margin: '3px 0 0' }}>
+                          Top: <InfoTip term="SHAP"><span style={{ color: S.primary, fontFamily: 'monospace', fontSize: 9 }}>{s.shap_top}</span></InfoTip>
+                        </p>
+                        <p style={{ color: S.muted, fontSize: 8, margin: '4px 0 0', opacity: 0.35, textAlign: 'right' }}>click → research ›</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ color: S.muted, fontSize: 13, fontStyle: 'italic', padding: '28px 0', textAlign: 'center' }}>
+                    Click <strong style={{ color: S.primary }}>⚡ Run Intraday</strong> to compute IC, Sharpe, and SHAP importances on hourly bars
+                  </div>
+                )}
+              </Card>
+
+              {/* Section 2: Full-width SHAP Feature Importance */}
+              <Card title={
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <InfoTip term="SHAP">SHAP Feature Importance</InfoTip>
+                    <InfoIcon term="SHAP" />
+                  </span>
+                }
+                right={
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <select
+                      value={selectedShapTicker}
+                      onChange={e => setSelectedShapTicker(e.target.value)}
+                      title="Select ticker or ALL (cross-ticker average) to view SHAP importances"
+                      style={{ background: S.cardBg, color: S.text, border: `1px solid ${S.border}`,
+                        borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer' }}>
+                      <option value="ALL">ALL (avg)</option>
+                      {(tickerInfoQuery.data ?? ALL_TICKERS.map(t => ({ ticker: t }))).map((td: any) => (
+                        <option key={td.ticker} value={td.ticker}>{td.ticker}</option>
+                      ))}
+                    </select>
+                    <span style={{ color: S.muted, fontSize: 10, opacity: 0.6 }}>or click intraday card ›</span>
+                  </div>
+                }>
+                {shapClickedFeature && (
+                  <ShapFeatureModal
+                    feature={shapClickedFeature.feature}
+                    importance={shapClickedFeature.importance}
+                    ticker={selectedShapTicker}
+                    onClose={() => setShapClickedFeature(null)}
+                  />
+                )}
+                {shapData.data?.features && shapData.data.features.length > 0 ? (
+                  <>
+                    <SHAPImportanceChart
+                      data={shapData.data.features}
+                      ticker={selectedShapTicker}
+                      onBarClick={(feature, importance) => setShapClickedFeature({ feature, importance })}
+                    />
+                    {shapData.data.mean_ic !== undefined && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 6 }}>
+                        <span
+                          onClick={() => setClickedMetricKey('IC')}
+                          style={{ cursor: 'pointer', color: S.primary, fontSize: 10, textDecoration: 'underline dotted', textUnderlineOffset: 3 }}
+                          title="Click to learn what IC means">
+                          Mean IC
+                        </span>
+                        <span style={{ color: Math.abs(shapData.data.mean_ic) > 0.05 ? S.positiveVal : Math.abs(shapData.data.mean_ic) >= 0.02 ? S.warnVal : S.muted, fontWeight: 700, fontSize: 11 }}>
+                          {(shapData.data.mean_ic * 100).toFixed(3)}%
+                        </span>
+                        {Math.abs(shapData.data.mean_ic) >= 0.05
+                          ? <span style={{ color: S.positiveVal, fontSize: 9 }}>✓ meaningful signal</span>
+                          : Math.abs(shapData.data.mean_ic) >= 0.02
+                            ? <span style={{ color: S.warnVal, fontSize: 9 }}>weak signal</span>
+                            : <span style={{ color: S.muted, fontSize: 9, opacity: 0.6 }}>noise level</span>}
+                        {selectedShapTicker === 'ALL' && <span style={{ color: S.muted, fontSize: 9, opacity: 0.5 }}>(avg)</span>}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <SHAPImportanceChart data={[]} ticker={selectedShapTicker} />
+                )}
+              </Card>
+            </>
+          )}
+
+          {/* ── Charts (daily only) ── */}
+          {resolution === 'daily' && <Card title="Research Output Charts — Click to Analyse · Hover for Description">
             {FIGURES.length ? (
               <div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: selectedImg ? 20 : 0 }}>
@@ -1352,13 +2135,13 @@ export default function App() {
                 })()}
               </div>
             ) : (<p style={{ color: S.muted, fontSize: 13, fontStyle: 'italic', margin: 0, opacity: 0.5 }}>No charts yet — run the pipeline first</p>)}
-          </Card>
+          </Card>}
 
           {/* ── Data Download ── */}
           <Card title="Raw Data — Download 2yr Daily OHLCV · 501 bars per ticker · Free">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
-              {ALL_TICKERS.map(t => {
-                const [name, sector] = TICKER_NAMES[t] ?? [t, '']
+              {[...ALL_TICKERS, ...customTickersList].map(t => {
+                const [name, sector] = dynTickerNames[t] ?? TICKER_NAMES[t] ?? [t, 'Custom']
                 const col = SECTOR_COLOR[sector] ?? S.primary
                 return (
                   <a key={t} href={`/api/data/${t}/csv`} download={`${t}_2yr_daily.csv`}
@@ -1372,8 +2155,8 @@ export default function App() {
             <p style={{ color: S.muted, fontSize: 10, margin: 0, opacity: 0.5 }}>Columns: Date, open, high, low, close, volume · yfinance · 2024-06-27 to 2026-06-26 · 501 trading days · Click any ticker to download CSV</p>
           </Card>
 
-          {/* ── Run History ── */}
-          <HistoryPanel S={S} qc={qc} />
+          {/* ── Run History (daily only) ── */}
+          {resolution === 'daily' && <HistoryPanel S={S} qc={qc} />}
 
           {/* ── Chat ── */}
           <Card title="Research Assistant — Ask Groq (Grounded in Live DB Data)">

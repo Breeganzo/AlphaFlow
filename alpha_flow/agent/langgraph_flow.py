@@ -102,7 +102,38 @@ def compute_features(state: dict) -> dict:
     return {**state, "snapshots": snapshots}
 
 
-# ── Node 3 ────────────────────────────────────────────────────────────────────
+# ── Node 3 (Phase 2) ─────────────────────────────────────────────────────────
+def intraday_features(state: dict) -> dict:
+    """
+    Phase 2 conditional node: activates when resolution='hourly'.
+    Runs the full intraday pipeline (VWAP + Hawkes + Volume Clock + SHAP)
+    and adds results to state for the LLM to use.
+    """
+    if state.get("resolution") != "hourly":
+        return state   # Daily mode: skip this node entirely
+
+    print("[3/6] Running Phase 2 intraday pipeline (VWAP + Hawkes + Volume Clock) …")
+    tickers = list(state.get("bars", {}).keys())
+    if not tickers:
+        return state
+
+    try:
+        from alpha_flow.analysis.intraday_engine import run_intraday_pipeline
+        intraday_results = run_intraday_pipeline(tickers, resolution="1h")
+        mean_ic_values = [v["mean_ic"] for v in intraday_results.values() if "mean_ic" in v]
+        avg_ic = float(sum(mean_ic_values) / len(mean_ic_values)) if mean_ic_values else 0.0
+        print(f"  Phase 2 avg IC across {len(tickers)} tickers: {avg_ic:.4f}")
+        for t, res in intraday_results.items():
+            ic = res.get("mean_ic", 0.0)
+            n  = res.get("n_folds", 0)
+            print(f"  {t}: IC={ic:.4f}  folds={n}")
+        return {**state, "intraday_results": intraday_results, "intraday_avg_ic": avg_ic}
+    except Exception as exc:
+        print(f"  [intraday_features] Error: {exc}")
+        return state
+
+
+# ── Node 4 ────────────────────────────────────────────────────────────────────
 def lgbm_predict(state: dict) -> dict:
     print("[3/5] Running walk-forward LightGBM on all tickers …")
     bars = state["bars"]
@@ -231,18 +262,20 @@ def summarise(state: dict) -> dict:
 # ── Build graph ───────────────────────────────────────────────────────────────
 def build_graph() -> StateGraph:
     g = StateGraph(dict)
-    g.add_node("fetch_data",       fetch_data)
-    g.add_node("compute_features", compute_features)
-    g.add_node("lgbm_predict",     lgbm_predict)
-    g.add_node("llm_interpret",    llm_interpret)
-    g.add_node("summarise",        summarise)
+    g.add_node("fetch_data",        fetch_data)
+    g.add_node("compute_features",  compute_features)
+    g.add_node("intraday_features", intraday_features)   # Phase 2 — no-op in daily mode
+    g.add_node("lgbm_predict",      lgbm_predict)
+    g.add_node("llm_interpret",     llm_interpret)
+    g.add_node("summarise",         summarise)
 
     g.set_entry_point("fetch_data")
-    g.add_edge("fetch_data",       "compute_features")
-    g.add_edge("compute_features", "lgbm_predict")
-    g.add_edge("lgbm_predict",     "llm_interpret")
-    g.add_edge("llm_interpret",    "summarise")
-    g.add_edge("summarise",        END)
+    g.add_edge("fetch_data",        "compute_features")
+    g.add_edge("compute_features",  "intraday_features")  # Phase 2 node (no-op in daily mode)
+    g.add_edge("intraday_features", "lgbm_predict")
+    g.add_edge("lgbm_predict",      "llm_interpret")
+    g.add_edge("llm_interpret",     "summarise")
+    g.add_edge("summarise",         END)
     return g
 
 

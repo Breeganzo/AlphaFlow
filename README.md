@@ -3,14 +3,347 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111-green)](https://fastapi.tiangolo.com)
 [![React 18](https://img.shields.io/badge/React-18-61dafb)](https://react.dev)
-[![Tests](https://img.shields.io/badge/tests-29%20passing-brightgreen)](#testing)
-[![Phase 1](https://img.shields.io/badge/Phase-1%20Complete-success)](#phases)
+[![Tests](https://img.shields.io/badge/tests-39%20passing-brightgreen)](#testing)
+[![Phase 1](https://img.shields.io/badge/Phase%201-Complete-success)](#phase-1--daily-microstructure-engine)
+[![Phase 2](https://img.shields.io/badge/Phase%202-Complete-blueviolet)](#phase-2--intraday-alpha-engine)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
-> **Author:** Anthony Breeganzo Thomas | MSc Risk Management and Financial Engineering — Imperial College London  
-> 📄 **[Phase Roadmap](docs/PHASE_ROADMAP.md)** · 🎓 **[Scholarship Justification](docs/SCHOLARSHIP.md)** · 🔧 **[Technical Spec](docs/TECHNICAL_SPEC.md)** · 📊 **[Research Paper](RESEARCH.md)**
+> **Author:** Anthony Breeganzo Thomas | Quantitative Engineer @ Kyndryl AI · Imperial College RMFE Target 2027  
+> � **[Research Proposal](RESEARCH.md)**
 
-AlphaFlow extracts **short-horizon alpha signals** from market microstructure — the mechanics of how prices move in response to order flow. It implements four academically grounded metrics (OFI, Kyle λ, Amihud ILLIQ, Roll spread estimator), trains a LightGBM walk-forward classifier to predict next-bar return direction, runs a Groq LLM to generate plain-English signal rationale, and surfaces everything in a live React dashboard with interactive Recharts, hover tooltips, and custom ticker support.
+AlphaFlow is a **two-phase microstructure alpha signal engine** that demonstrates real-world quantitative research practices end-to-end — from signal construction and walk-forward validation to LLM interpretation and live dashboarding.
+
+**Phase 1** implements five academic microstructure signals on 2yr daily OHLCV, trains a LightGBM walk-forward classifier, and uses Groq LLM to generate signal rationale.  
+**Phase 2** extends to hourly bars with three novel signals (VWAP deviation, Hawkes process intensity, volume clock imbalance), switches to LGBMRegressor for proper IC measurement, adds SHAP feature attribution, and streams live bar data via SSE.
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+| Requirement | Version | Notes |
+|-------------|---------|-------|
+| Python | 3.9+ | 3.11–3.13 recommended |
+| Node.js | 18+ | For the React frontend |
+| npm | 9+ | Bundled with Node.js |
+| Git | any | For cloning |
+
+**Check your versions:**
+```bash
+python3 --version   # or python --version on Windows
+node --version
+npm --version
+```
+
+**Install Node.js + npm if missing:**
+- **Mac:** `brew install node` (requires [Homebrew](https://brew.sh)) or download from [nodejs.org](https://nodejs.org)
+- **Windows:** Download the LTS installer from [nodejs.org](https://nodejs.org) — npm is included
+
+---
+
+## Setup
+
+### macOS / Linux
+
+```bash
+# 1. Clone and enter the project
+git clone https://github.com/your-username/AlphaFlow.git
+cd AlphaFlow
+
+# 2. Create virtual environment and install Python dependencies
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# 3. Create a .env file with your API keys
+cp .env.example .env      # then edit .env
+# Required: GROQ_API_KEY (free at https://console.groq.com)
+# Optional: ALPACA_API_KEY + ALPACA_SECRET_KEY for live data
+
+# 4. Install frontend dependencies
+cd frontend
+npm install
+cd ..
+```
+
+### Windows (PowerShell)
+
+```powershell
+# 1. Clone and enter the project
+git clone https://github.com/your-username/AlphaFlow.git
+cd AlphaFlow
+
+# 2. Create virtual environment and install Python dependencies
+python -m venv .venv
+.venv\Scripts\Activate.ps1      # If blocked: Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+pip install -r requirements.txt
+
+# 3. Create .env with your API keys
+copy .env.example .env          # then edit .env in Notepad
+
+# 4. Install frontend dependencies
+cd frontend
+npm install
+cd ..
+```
+
+### Environment Variables (`.env`)
+
+> **Important:** The `.env` file must be placed inside the `AlphaFlow/` folder (the same folder as `requirements.txt`), not in the parent workspace directory.
+
+#### Getting API Keys
+
+**Groq (required):**
+1. Go to [console.groq.com](https://console.groq.com) → Sign up (free, no credit card)
+2. Navigate to **API Keys** → **Create API Key**
+3. Copy the key — it starts with `gsk_`
+
+**Alpaca (optional — for live/paper market data):**
+1. Go to [app.alpaca.markets](https://app.alpaca.markets) → Sign up (free paper trading)
+2. Navigate to **Paper Trading** → **API Keys** → **Generate New Key**
+3. Copy **both** the Key ID (`PK…`) and the Secret Key immediately — **the Secret Key is shown only once** and cannot be retrieved after you close the dialog
+
+```env
+# Required — free at https://console.groq.com
+GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxx
+
+# Optional second key (auto-fallback on rate limit)
+GROQ_API_KEY_2=gsk_xxxxxxxxxxxxxxxxxxxx
+
+# Optional — for Alpaca live/paper data (paper trading, 15-min delayed IEX free tier)
+ALPACA_API_KEY=PKxxxxxxxxxxxxxxxxxx
+ALPACA_SECRET_KEY=xxxxxxxxxxxxxxxxxx
+ALPACA_BASE_URL=https://paper-api.alpaca.markets/v2
+```
+
+### Convenience Script (Mac/Linux only)
+
+```bash
+bash setup_venv.sh   # creates .venv + pip install in one step
+```
+
+---
+
+## Running the App
+
+Open **two terminals**. Run both commands simultaneously.
+
+### Terminal 1 — Backend (FastAPI)
+
+**Mac/Linux:**
+```bash
+cd AlphaFlow
+source .venv/bin/activate
+uvicorn backend.main:app --reload --port 8002
+```
+
+**Windows:**
+```powershell
+cd AlphaFlow
+.venv\Scripts\Activate.ps1
+uvicorn backend.main:app --reload --port 8002
+```
+
+Backend runs at: `http://localhost:8002`  
+API docs (Swagger): `http://localhost:8002/docs`
+
+### Terminal 2 — Frontend (React + Vite)
+
+```bash
+cd AlphaFlow/frontend
+npm run dev
+```
+
+Frontend runs at: `http://localhost:3002`
+
+Open your browser at **http://localhost:3002** to use the dashboard.
+
+---
+
+## Troubleshooting
+
+### "API proxy error" / blank cards on the dashboard
+**Cause:** The backend is not running.  
+**Fix:** Start the FastAPI backend first (Terminal 1), then open the frontend. The frontend proxies all `/api/*` calls to `http://localhost:8002` — if the backend is down, every data request fails.
+
+```bash
+# Terminal 1 — start backend first
+cd AlphaFlow
+source .venv/bin/activate
+uvicorn backend.main:app --reload --port 8002
+
+# Verify it's alive
+curl http://localhost:8002/health
+# Expected: {"status":"ok","alpaca":"configured",...}
+```
+
+### Port 8002 or 3002 already in use
+
+```bash
+# Kill whatever is on the port (Mac/Linux)
+lsof -ti:8002 | xargs kill -9
+lsof -ti:3002 | xargs kill -9
+
+# Then restart the services normally
+```
+
+### "ModuleNotFoundError: No module named 'alpha_flow'" or similar
+**Cause:** Virtual environment not activated, or you're running from the wrong directory.  
+**Fix:**
+```bash
+# Always activate venv first
+source .venv/bin/activate           # Mac/Linux
+.venv\Scripts\Activate.ps1          # Windows
+
+# Run uvicorn from inside the AlphaFlow/ folder
+cd AlphaFlow
+uvicorn backend.main:app --reload --port 8002
+```
+
+### Alpaca shows "not_configured" in `/health`
+**Cause:** `.env` keys saved but backend not restarted, OR `.env` is in the wrong location.  
+**Fix:**
+- The `.env` file **must be inside the `AlphaFlow/` folder** — not the parent workspace directory
+- After editing `.env`, stop and restart uvicorn — environment variables are loaded at startup
+- Verify: `curl http://localhost:8002/health` should return `"alpaca":"configured"`
+
+### Groq LLM errors / "rate limit" messages
+**Cause:** Groq free tier (100K tokens/day per key).  
+**Fix:** Add a second key as `GROQ_API_KEY_2` in `.env` — AlphaFlow auto-rotates to it when the first key hits the daily limit.
+
+### Frontend stuck on loading / stale data after pipeline run
+**Fix:** Hard-refresh the browser (`Cmd+Shift+R` Mac / `Ctrl+Shift+R` Windows). React Query auto-polls every 10 seconds, but a forced refresh clears any cached stale state.
+
+---
+
+## What `run.py` Does
+
+`run.py` is the **CLI entry point** — it runs the full pipeline (LangGraph → walk-forward → signal card → charts) **without the FastAPI server**. Use it when:
+
+- You want a quick terminal demo without starting the UI
+- Running in a CI environment (e.g. GitHub Actions)
+- Batch processing or scripted usage
+
+```bash
+cd AlphaFlow
+source .venv/bin/activate   # Mac/Linux
+python run.py
+```
+
+Output: signal card printed to stdout + charts saved to `outputs/figures/`.
+
+---
+
+## Testing
+
+```bash
+cd AlphaFlow
+source .venv/bin/activate
+python -m pytest tests/ -v
+```
+
+Expected: **39 tests passing** (29 Phase 1 + 10 Phase 2)
+
+```
+tests/test_microstructure.py   29 passed  (OFI, Kyle λ, Amihud, C-S spread, IC, backtest)
+tests/test_intraday.py         10 passed  (VWAP z-score, Hawkes intensity, walk-forward IC)
+```
+
+---
+
+## Phase 1 — Daily Microstructure Engine
+
+**Data:** yfinance, 2yr daily OHLCV, 10 tickers (S&P 500 large-caps), ~504 bars/ticker  
+**Model:** LightGBM Classifier, walk-forward (5 folds), Spearman IC  
+**LLM:** Groq `llama-3.3-70b-versatile`, deterministic cross-sectional signals  
+
+### Phase 1 Signals
+
+| Signal | Formula | Academic Paper |
+|--------|---------|----------------|
+| **OFI Z-score** | `(buy_vol − sell_vol) / total_vol`, z-scored over 20 bars | Chordia, Roll & Subrahmanyam (2002) |
+| **Kyle's λ** | `λ = Cov(ΔP, OFI) / Var(OFI)`, rolling 20 bars | Kyle (1985) Econometrica |
+| **Amihud ILLIQ** | `ILLIQ = |r_t| / (P_t × V_t)`, per $1M traded | Amihud (2002) JFM |
+| **Corwin-Schultz Spread** | `S = 2(eᵅ−1)/(1+eᵅ)`, derived from H/L ratio | Corwin & Schultz (2012) JF |
+| **Lee-Ready Tick Sign** | `+1` if close ≥ open, `−1` otherwise | Lee & Ready (1991) JF |
+
+### Phase 1 Architecture
+
+```
+  DATA                   SIGNALS              ML + LLM
+  yfinance API       OFI Z-score          LightGBM Classifier
+  2yr daily OHLCV    Kyle's Lambda (λ)    Walk-forward (5 folds)
+  ~504 bars/ticker─► Amihud ILLIQ     ─►  Spearman IC eval
+  10 tickers         C-S Spread           Groq LLM rationale
+  (+ custom)         Lee-Ready Sign       Cross-sectional ranking
+```
+
+---
+
+## Phase 2 — Intraday Alpha Engine
+
+**Data:** yfinance hourly, up to 730 days, ~3,276 bars/ticker; Alpaca IEX free tier fallback  
+**Model:** LGBMRegressor (not Classifier — enables proper IC measurement), walk-forward (~17 folds)  
+**New:** SHAP feature attribution, SSE live stream, VWAP + Hawkes + Volume Clock signals  
+
+### Why LGBMRegressor instead of Classifier?
+
+Phase 1 used a **Classifier** — it predicted direction (+1/−1). IC measured on class probabilities is biased.  
+Phase 2 uses a **Regressor** — it predicts the *magnitude* of future return. IC = Spearman(predicted_return, actual_return) — the academically correct definition from Grinold & Kahn (2000).
+
+| | Phase 1 | Phase 2 |
+|---|---|---|
+| Bars | 504 daily | ~3,276 hourly |
+| WF folds | 5 | ~17 |
+| Features | 5 signals + 3 lags | 8 signals + 4 lags = **12** |
+| Model | LGBMClassifier | **LGBMRegressor** |
+| IC target | direction (biased) | return magnitude (correct) |
+| Attribution | none | **SHAP** (Lundberg & Lee 2017) |
+
+### Phase 2 Signals (New)
+
+| Signal | Formula | Academic Paper |
+|--------|---------|----------------|
+| **VWAP Deviation Z** | `z = (close − VWAP) / rolling_std(close − VWAP)` | Almgren & Chriss (2001) |
+| **Hawkes Intensity Z** | `λ(t) = μ + Σ α·exp(−β·(t−tᵢ))`, MLE via L-BFGS-B | Bacry, Mastromatteo & Muzy (2015) |
+| **Volume Imbalance Z** | `VI = (buy_vol − sell_vol) / total_vol`, z-scored | López de Prado (2018) Ch.3 |
+
+**Novel contribution:** Using Hawkes intensity as an LLM feature (Phase 2 LangGraph node) — not present in existing literature.
+
+### Phase 2 Architecture
+
+```
+  DATA                   SIGNALS (12 features)      ML + LLM
+  yfinance 1h (cache)  OFI Z, Amihud, Kyle λ      LGBMRegressor
+  Alpaca IEX fallback  CS Spread, Tick Sign        Walk-forward ~17 folds
+  3,276 bars/ticker ─► VWAP Z, Hawkes Z,       ─►  Spearman IC, Sharpe
+  SSE live stream      Volume Z, 4 lag returns     SHAP attribution
+                                                    Groq LLM (hourly context)
+```
+
+---
+
+## Full System Architecture
+
+```
+  ─────────────────────────────────────────────────────────────────────
+  FastAPI BACKEND (port 8002)          SQLite DATABASE
+  ─────────────────────────────────────────────────────────────────────
+   Phase 1:                            Phase 2:
+   POST /api/run                       POST /api/intraday/run
+   GET  /api/signals/all               GET  /api/intraday/signals
+   GET  /api/history                   GET  /api/data/shap-importance
+   GET  /api/data/ofi-timeseries       GET  /api/stream (SSE)
+   GET  /api/data/execution-quality    GET  /api/data/alpha-decay
+   GET  /api/data/kyle-lambda          POST /api/explain (Groq)
+   POST /api/chat (Groq)               GET  /api/tickers
+  ─────────────────────────────────────────────────────────────────────
+  React FRONTEND (port 3002) — Vite + TypeScript + TailwindCSS
+   Daily mode: OFI charts, signal cards, LLM chat, execution quality
+   Hourly mode: intraday signal cards, SHAP chart, live SSE dot
+  ─────────────────────────────────────────────────────────────────────
+```
 
 ---
 
@@ -195,7 +528,7 @@ AlphaFlow/
 ### One-time Setup
 
 ```bash
-cd /Users/anthonybreeganzo.t/Quant_Practise/AlphaFlow
+cd AlphaFlow   # wherever you unzipped / cloned
 
 # 1. Python environment
 bash setup_venv.sh
@@ -213,19 +546,19 @@ cd frontend && npm install && cd ..
 
 **Terminal 1 — Backend:**
 ```bash
-cd /Users/anthonybreeganzo.t/Quant_Practise/AlphaFlow
+cd AlphaFlow
 .venv/bin/python3 -m uvicorn backend.main:app --port 8002 --log-level warning
 ```
 
 **Terminal 2 — Frontend:**
 ```bash
-cd /Users/anthonybreeganzo.t/Quant_Practise/AlphaFlow/frontend
-node node_modules/.bin/vite --port 3002
+cd AlphaFlow/frontend
+npm run dev
 ```
 
 **Browser:** `http://localhost:3002`
 
-Click **Run Pipeline**. Done.
+Click **Compute EOD Signals** (daily mode) or **Run Alpha Engine** (hourly mode). Done.
 
 ### Stop Services
 
@@ -266,7 +599,7 @@ kill -9 $(lsof -ti:3002)   # frontend
 .venv/bin/pytest tests/ -v
 ```
 
-29 tests, all passing, all offline (no API calls):
+39 tests, all passing, all offline (no API calls):
 - 4 OFI calculator tests
 - 4 Amihud ratio tests
 - 4 Kyle lambda tests

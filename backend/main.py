@@ -29,7 +29,8 @@ from fastapi.responses import FileResponse
 
 from backend.database import (init_db, start_run, finish_run, get_run_history,
                               get_latest_signal, upsert_signal,
-                              get_latest_signals_by_ticker, get_run_signals)
+                              get_latest_signals_by_ticker, get_run_signals,
+                              delete_signals_for_inactive_tickers)
 
 init_db()
 
@@ -136,6 +137,12 @@ def _generate_charts(snapshots: dict, ic_by_ticker: dict) -> None:
 
 def _run_pipeline_bg(run_id: int) -> None:
     try:
+        # ── Step 0: purge DB rows for any tickers removed since last run ──────
+        try:
+            delete_signals_for_inactive_tickers()
+        except Exception as _e:
+            print(f"[pipeline] db cleanup skipped: {_e}")
+
         from alpha_flow.agent.langgraph_flow import run
         final = run()
 
@@ -169,14 +176,46 @@ def _run_pipeline_bg(run_id: int) -> None:
         # Generate all charts from cached daily data
         _generate_charts(snapshots, ic_by_ticker)
 
-        finish_run(run_id, status="ok", sharpe=agg_sharpe, max_drawdown=agg_mdd, sortino=agg_sortino)
+        # ── Capture data date range for UI card title ─────────────────────────
+        data_start_str: str | None = None
+        data_end_str:   str | None = None
+        total_bars_val: int = 0
+        try:
+            from alpha_flow.data.data_feed import get_daily_bars
+            from alpha_flow.config.settings import get_all_tickers
+            import pandas as _pd
+            _dates_min, _dates_max, _bar_counts = [], [], []
+            for _t in get_all_tickers():
+                _df = get_daily_bars(_t)
+                if not _df.empty:
+                    _dates_min.append(_df.index.min())
+                    _dates_max.append(_df.index.max())
+                    _bar_counts.append(len(_df))
+            if _dates_min:
+                data_start_str = _pd.Timestamp(min(_dates_min)).strftime("%Y-%m-%d")
+                data_end_str   = _pd.Timestamp(max(_dates_max)).strftime("%Y-%m-%d")
+                total_bars_val = int(sum(_bar_counts) // len(_bar_counts))  # avg bars/ticker
+        except Exception as _e:
+            print(f"[pipeline] date range capture failed: {_e}")
+
+        finish_run(run_id, status="ok", sharpe=agg_sharpe, max_drawdown=agg_mdd,
+                   sortino=agg_sortino, data_start=data_start_str,
+                   data_end=data_end_str, total_bars=total_bars_val)
     except Exception as exc:
         traceback.print_exc()
         finish_run(run_id, status="error", error_msg=str(exc))
 
 
 @app.get("/health", tags=["system"])
-def health(): return {"status": "ok", "project": "AlphaFlow — Microstructure Alpha Engine"}
+def health():
+    from alpha_flow.config.settings import ALPACA_API_KEY, ALPACA_BASE_URL
+    alpaca_status = "configured" if ALPACA_API_KEY else "not_configured"
+    return {
+        "status": "ok",
+        "project": "AlphaFlow — Microstructure Alpha Engine",
+        "alpaca": alpaca_status,
+        "alpaca_url": ALPACA_BASE_URL if ALPACA_API_KEY else None,
+    }
 
 
 @app.get("/api/info", tags=["system"])
@@ -229,11 +268,13 @@ def get_signal() -> dict:
 
 @app.get("/api/signals/all", tags=["signals"])
 def get_all_signals() -> list[dict] | dict:
-    """Return the latest signal for each ticker from the most recent pipeline run."""
+    """Return the latest signal for each ACTIVE ticker (default + current custom)."""
+    from alpha_flow.config.settings import get_all_tickers
     rows = get_latest_signals_by_ticker()
     if not rows:
         return {"message": "NO_DATA — run the pipeline first"}
-    return rows
+    active = set(get_all_tickers())
+    return [r for r in rows if r.get("ticker") in active]
 
 
 @app.get("/api/history/{run_id}/signals", tags=["pipeline"])
@@ -626,7 +667,9 @@ _GROQ_CHART_CONTEXTS: dict[str, str] = {
     ),
 }
 
-_PROJECT_CONTEXT = """AlphaFlow is a microstructure alpha signal generator that analyses order flow imbalance (OFI), Kyle's lambda (price impact), and Amihud illiquidity to predict short-term price movements. Uses Alpaca real-time data feeds to detect institutional trading signatures and generate execution signals."""
+_PROJECT_CONTEXT = """AlphaFlow v2.0 is a two-phase market microstructure alpha engine.
+Phase 1 (daily): computes Order Flow Imbalance (OFI) Z-score, Kyle's lambda (price impact), Amihud illiquidity, and Corwin-Schultz bid-ask spread from daily OHLCV. Phase 1 OFI IC ≈ 0 at daily resolution — this is scientifically expected (Chordia et al. 2002).
+Phase 2 (hourly): LightGBM walk-forward model on 12 microstructure features (OFI, VWAP deviation, Hawkes intensity, spread, volume clock, etc.) at hourly resolution. Phase 2 IC = 1–3% with yfinance free data; expected >5% with live tick data (Alpaca). The Phase 2 IC is the primary performance metric for this engine."""
 
 @app.post("/api/explain", tags=["ai"])
 async def explain_chart(body: dict) -> dict:
@@ -667,45 +710,96 @@ async def explain_chart(body: dict) -> dict:
 
 import re as _re
 
-def _build_chat_context(message: str) -> str:
+def _build_chat_context(message: str, ticker: str | None = None, phase: str = "daily", intraday_signal: dict | None = None) -> str:
     """Build a rich system context for chat, injecting live ticker data if mentioned."""
     # Detect ticker symbols in message (2-5 uppercase letters, common US tickers)
-    tickers_mentioned = _re.findall(r'\b([A-Z]{2,5})\b', message)
+    tickers_mentioned = list(set(_re.findall(r'\b([A-Z]{2,5})\b', message)))
+    if ticker and ticker not in tickers_mentioned:
+        tickers_mentioned.append(ticker)
     
-    # Always include all-ticker summary from DB
+    # Always include all-ticker summary from DB (Phase 1 daily signals)
     live_rows = get_latest_signals_by_ticker()
     if live_rows:
         ts = live_rows[0].get("recorded_at", "")[:16] if live_rows else ""
-        rows_text = "\n".join(
-            f"  {r['ticker']:<6} OFI_z={r.get('ofi', 0):+.3f}  "
-            f"Kyle_λ={r.get('kyle_lambda', 0):.3e}  "
-            f"Spread={r.get('eff_spread_bps', 0):.1f}bps  "
-            f"Amihud={r.get('amihud_illiq', 0):.3e}  "
-            f"IC={r.get('ic_value', 0) or 0:.4f}  "
-            f"Signal={r.get('signal', 'HOLD')}  "
-            f"Reason: {(r.get('llm_reason') or '')[:80]}"
-            for r in live_rows
-        )
-        live_context = f"\n\nLIVE DASHBOARD DATA (as of {ts} UTC):\n{rows_text}"
+        if phase == "hourly":
+            # In hourly mode, omit OFI_IC (Phase 1 daily IC ≈ 0 — irrelevant here)
+            rows_text = "\n".join(
+                f"  {r['ticker']:<6} OFI_z={r.get('ofi', 0):+.3f}  "
+                f"Kyle_λ={r.get('kyle_lambda', 0):.3e}  "
+                f"Spread={r.get('eff_spread_bps', 0):.1f}bps  "
+                f"Amihud={r.get('amihud_illiq', 0):.3e}  "
+                f"Signal={r.get('signal', 'HOLD')}"
+                for r in live_rows
+            )
+            live_context = (
+                f"\n\n⚠ PHASE 2 HOURLY SESSION — Phase 1 OFI_IC (daily OHLCV IC ≈ 0) is NOT the relevant IC here. "
+                f"When asked about IC or Information Coefficient, always quote the Phase 2 LightGBM IC from PHASE 2 INTRADAY DATA below, NOT the Phase 1 OFI IC.\n"
+                f"LIVE MICROSTRUCTURE DATA (as of {ts} UTC — liquidity metrics only, for execution context):\n{rows_text}"
+            )
+        else:
+            rows_text = "\n".join(
+                f"  {r['ticker']:<6} OFI_z={r.get('ofi', 0):+.3f}  "
+                f"Kyle_λ={r.get('kyle_lambda', 0):.3e}  "
+                f"Spread={r.get('eff_spread_bps', 0):.1f}bps  "
+                f"Amihud={r.get('amihud_illiq', 0):.3e}  "
+                f"OFI_IC={r.get('ic_value', 0) or 0:.4f}  "
+                f"Signal={r.get('signal', 'HOLD')}  "
+                f"Reason: {(r.get('llm_reason') or '')[:80]}"
+                for r in live_rows
+            )
+            live_context = f"\n\nLIVE DASHBOARD DATA (as of {ts} UTC, Phase 1 Daily OFI signals):\n{rows_text}"
     else:
         live_context = "\n\nLIVE DASHBOARD DATA: No pipeline runs yet."
 
-    # Extra context for specific tickers mentioned
+    # Extra context for specific tickers mentioned (Phase 1 daily data)
     ticker_context = ""
     ticker_map = {r["ticker"]: r for r in live_rows}
     for tkr in tickers_mentioned:
         if tkr in ticker_map:
             r = ticker_map[tkr]
-            ticker_context += (
-                f"\n\nDETAILED DATA FOR {tkr}:\n"
-                f"  OFI Z-score: {r.get('ofi', 0):+.4f} (positive = net buying pressure; range ≈ -3 to +3)\n"
-                f"  Kyle's Lambda: {r.get('kyle_lambda', 0):.4e} $/share (price impact per unit order flow)\n"
-                f"  Amihud ILLIQ: {r.get('amihud_illiq', 0):.4e} price_chg/$1M_vol\n"
-                f"  Effective Spread: {r.get('eff_spread_bps', 0):.2f} bps (Corwin-Schultz estimate)\n"
-                f"  Walk-forward IC: {r.get('ic_value', 0) or 0:.4f} (Spearman ρ; >0.05 = significant)\n"
-                f"  LLM Signal: {r.get('signal', 'HOLD')}\n"
-                f"  LLM Reason: {r.get('llm_reason', 'N/A')}"
-            )
+            if phase == "hourly":
+                # In hourly mode, only include liquidity metrics — not Phase 1 IC
+                ticker_context += (
+                    f"\n\nLIQUIDITY CONTEXT FOR {tkr} (Phase 1 daily data — for execution cost context only):\n"
+                    f"  OFI Z-score: {r.get('ofi', 0):+.4f}\n"
+                    f"  Kyle's Lambda: {r.get('kyle_lambda', 0):.4e} $/share\n"
+                    f"  Amihud ILLIQ: {r.get('amihud_illiq', 0):.4e}\n"
+                    f"  Effective Spread: {r.get('eff_spread_bps', 0):.2f} bps\n"
+                    f"  DO NOT quote Phase 1 OFI IC for this ticker — see Phase 2 IC in the PHASE 2 INTRADAY DATA below."
+                )
+            else:
+                ticker_context += (
+                    f"\n\nDETAILED PHASE 1 DAILY DATA FOR {tkr}:\n"
+                    f"  OFI Z-score: {r.get('ofi', 0):+.4f} (positive = net buying pressure; range ≈ -3 to +3)\n"
+                    f"  Kyle's Lambda: {r.get('kyle_lambda', 0):.4e} $/share (price impact per unit order flow)\n"
+                    f"  Amihud ILLIQ: {r.get('amihud_illiq', 0):.4e} price_chg/$1M_vol\n"
+                    f"  Effective Spread: {r.get('eff_spread_bps', 0):.2f} bps (Corwin-Schultz estimate)\n"
+                    f"  Phase 1 OFI Walk-forward IC: {r.get('ic_value', 0) or 0:.4f} (daily OHLCV IC ≈ 0 is EXPECTED — cannot resolve intra-bar direction)\n"
+                    f"  Signal: {r.get('signal', 'HOLD')}\n"
+                    f"  Reason: {r.get('llm_reason', 'N/A')}"
+                )
+
+    # Phase 2 intraday signal override (research drawer in hourly mode)
+    if phase == "hourly" and intraday_signal:
+        tkr       = intraday_signal.get("ticker", ticker or "")
+        mean_ic   = intraday_signal.get("mean_ic") or 0
+        sharpe    = intraday_signal.get("sharpe") or 0
+        mdd       = abs(intraday_signal.get("max_drawdown") or 0)
+        sortino   = intraday_signal.get("sortino") or 0
+        n_folds   = intraday_signal.get("n_folds") or "N/A"
+        shap_top  = intraday_signal.get("shap_top") or "N/A"
+        ticker_context += (
+            f"\n\nPHASE 2 INTRADAY DATA FOR {tkr} (LightGBM Walk-Forward, Hourly Resolution):\n"
+            f"  Signal: {intraday_signal.get('signal', 'HOLD')}\n"
+            f"  LightGBM IC (mean_ic): {mean_ic * 100:.2f}% — THIS is the Phase 2 IC to reference, NOT the Phase 1 OFI IC above\n"
+            f"  Annualised Sharpe: {sharpe:+.2f}\n"
+            f"  Max Drawdown: {mdd * 100:.1f}%\n"
+            f"  Sortino Ratio: {sortino:+.2f}\n"
+            f"  Walk-Forward Folds: {n_folds}\n"
+            f"  Top SHAP Feature: {shap_top}\n"
+            f"  NOTE: Phase 2 IC = {mean_ic * 100:.2f}% is from LightGBM on 12 microstructure features at hourly resolution. "
+            f"Phase 1 OFI IC ≈ 0 is unrelated — do NOT quote it when discussing Phase 2 performance for this ticker."
+        )
 
     return _PROJECT_CONTEXT + live_context + ticker_context
 
@@ -715,13 +809,16 @@ async def chat(body: dict) -> dict:
     """Chat with Groq about this project (temperature=0.2). Injects live ticker data."""
     message = body.get("message", "").strip()
     history = body.get("history", [])
+    ticker           = body.get("ticker")
+    phase            = body.get("phase", "daily")
+    intraday_signal  = body.get("intraday_signal")
     
     if not message:
         raise HTTPException(400, "message is required")
     if len(message) > 500:
         raise HTTPException(400, "message too long (max 500 chars)")
 
-    grounded_context = _build_chat_context(message)
+    grounded_context = _build_chat_context(message, ticker=ticker, phase=phase, intraday_signal=intraday_signal)
     
     messages = [
         {
@@ -755,3 +852,254 @@ async def chat(body: dict) -> dict:
             "model": "error",
             "detail": str(exc),
         }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Phase 2 — Intraday Endpoints
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_intraday_results_cache: dict = {}  # in-memory cache keyed by run_id
+
+
+def _build_intraday_cards(results: dict) -> list[dict]:
+    """Build intraday signal card dicts from raw pipeline results dict.
+
+    Signal classification uses cross-sectional IC ranking (industry standard):
+    - Absolute threshold first: |IC| > 5% → definitive BUY/SELL
+    - Cross-sectional rank fallback: top/bottom tercile of universe → relative BUY/SELL
+    - Only pure HOLD when IC is in the middle tercile AND below threshold
+    This matches how quant desks at Two Sigma / AQR produce relative signals.
+    """
+    valid = {t: r for t, r in results.items() if "error" not in r}
+    if not valid:
+        return []
+
+    # Cross-sectional ranking: sort tickers by mean_ic descending
+    sorted_tickers = sorted(valid, key=lambda t: valid[t].get("mean_ic", 0.0), reverse=True)
+    n = len(sorted_tickers)
+    tercile = max(1, n // 3)
+    buy_rank  = set(sorted_tickers[:tercile])          # top tercile
+    sell_rank = set(sorted_tickers[n - tercile:])      # bottom tercile
+
+    cards = []
+    for ticker, res in valid.items():
+        shap = res.get("shap_importance", {})
+        top_feature = max(shap, key=shap.get) if shap else "ofi_zscore"
+        ic = res.get("mean_ic", 0.0)
+
+        # Absolute threshold takes precedence; cross-sectional rank as fallback
+        if ic > 0.05:
+            signal = "BUY"
+        elif ic < -0.05:
+            signal = "SELL"
+        elif ticker in buy_rank and ic >= 0:
+            signal = "BUY"
+        elif ticker in sell_rank and ic <= 0:
+            signal = "SELL"
+        else:
+            signal = "HOLD"
+
+        cards.append({
+            "ticker":       ticker,
+            "signal":       signal,
+            "mean_ic":      round(ic, 6),
+            "sharpe":       round(res.get("sharpe", 0.0), 4),
+            "sortino":      round(res.get("sortino", 0.0), 4),
+            "max_drawdown": round(res.get("max_drawdown", 0.0), 4),
+            "n_folds":      res.get("n_folds", 0),
+            "n_bars":       res.get("n_bars", 0),
+            "train_bars":   res.get("train_bars", 0),
+            "test_bars":    res.get("test_bars", 0),
+            "data_start":   res.get("data_start"),
+            "data_end":     res.get("data_end"),
+            "shap_top":     top_feature,
+        })
+    return sorted(cards, key=lambda c: abs(c["mean_ic"]), reverse=True)
+
+
+@app.post("/api/intraday/run", tags=["intraday"])
+async def run_intraday(body: dict = {}) -> dict:
+    """
+    Trigger the Phase 2 intraday pipeline (LGBMRegressor walk-forward on hourly bars).
+
+    Why POST: triggers computation, not a read.
+    Returns: run_id + IC summary so the frontend can poll for updates.
+
+    Body params (all optional):
+      tickers    — list of ticker symbols (default: all from settings)
+      resolution — '1h' (default) or '1m'
+    """
+    import uuid
+    from alpha_flow.config.settings import get_all_tickers
+    from alpha_flow.analysis.intraday_engine import run_intraday_pipeline
+
+    tickers    = body.get("tickers") or get_all_tickers()
+    resolution = body.get("resolution", "1h")
+    run_id     = str(uuid.uuid4())[:8]
+
+    try:
+        results = run_intraday_pipeline(tickers, resolution=resolution)
+    except Exception as exc:
+        raise HTTPException(500, f"Intraday pipeline failed: {exc}")
+
+    _intraday_results_cache[run_id] = results
+
+    # ── Persist SHAP importances to SQLite ──
+    from backend.database import save_shap_importance as _save_shap
+    from backend.database import save_intraday_signals as _save_cards
+    from collections import defaultdict as _dd
+    universe_totals: dict = _dd(list)
+    all_ics: list[float] = []
+    for t, res in results.items():
+        if "error" in res or not res.get("shap_importance"):
+            continue
+        shap_dict = res["shap_importance"]
+        ticker_ic = res.get("mean_ic", 0.0)
+        ticker_features = sorted(
+            [{"feature": k, "importance": v} for k, v in shap_dict.items()],
+            key=lambda x: x["importance"], reverse=True,
+        )
+        _save_shap(t, ticker_features[:8], mean_ic=ticker_ic)
+        for feat, val in shap_dict.items():
+            universe_totals[feat].append(val)
+        all_ics.append(ticker_ic)
+    if universe_totals:
+        all_features = sorted(
+            [{"feature": k, "importance": round(sum(v) / len(v), 6)} for k, v in universe_totals.items()],
+            key=lambda x: x["importance"], reverse=True,
+        )
+        avg_ic = round(sum(all_ics) / len(all_ics), 6) if all_ics else 0.0
+        _save_shap("ALL", all_features[:8], mean_ic=avg_ic)
+
+    # ── Persist intraday signal cards to SQLite ──
+    cards = _build_intraday_cards(results)
+    _save_cards(cards)
+
+    ic_summary = {
+        t: {"mean_ic": v.get("mean_ic", 0.0), "sharpe": v.get("sharpe", 0.0),
+            "n_folds": v.get("n_folds", 0), "n_bars": v.get("n_bars", 0)}
+        for t, v in results.items()
+    }
+    avg_ic_val = (
+        sum(v["mean_ic"] for v in ic_summary.values()) / len(ic_summary)
+        if ic_summary else 0.0
+    )
+    return {"run_id": run_id, "ic_summary": ic_summary, "avg_ic": round(avg_ic_val, 6)}
+
+
+@app.get("/api/intraday/signals", tags=["intraday"])
+def get_intraday_signals() -> dict:
+    """
+    Return latest intraday signal cards with feature metadata.
+    Reads from SQLite first (survives backend restarts); falls back to in-memory cache.
+    Response: { signals: [...], meta: { feature_count: int, feature_names: list[str] } }
+    """
+    from backend.database import get_intraday_signals_db
+    from alpha_flow.analysis.intraday_engine import FEATURE_COLS
+
+    db_cards = get_intraday_signals_db()
+    signals: list = []
+    if db_cards is not None:
+        signals = db_cards
+    elif _intraday_results_cache:
+        latest_run = list(_intraday_results_cache.values())[-1]
+        signals = _build_intraday_cards(latest_run)
+
+    return {
+        "signals": signals,
+        "meta": {
+            "feature_count": len(FEATURE_COLS),
+            "feature_names": list(FEATURE_COLS),
+        },
+    }
+
+
+@app.get("/api/data/shap-importance", tags=["intraday"])
+def get_shap_importance(ticker: str = "AAPL") -> dict:
+    """
+    Return SHAP feature importances for a given ticker.
+    Reads from SQLite first (survives backend restarts); falls back to in-memory cache.
+    ticker=ALL returns the cross-ticker average importance.
+    """
+    from backend.database import get_shap_from_db
+
+    # 1. Try persistent DB (populated after first intraday run, survives restarts)
+    db_result = get_shap_from_db(ticker.upper())
+    if db_result:
+        return db_result
+
+    # 2. Fall back to in-memory cache (only if DB is empty, e.g. first-ever run in progress)
+    if not _intraday_results_cache:
+        return {"ticker": ticker, "features": [], "error": "No intraday run yet — click ⚡ Run Intraday"}
+
+    latest_run = list(_intraday_results_cache.values())[-1]
+
+    if ticker.upper() == "ALL":
+        from collections import defaultdict
+        totals: dict[str, list[float]] = defaultdict(list)
+        all_ics = []
+        for res in latest_run.values():
+            if "error" in res or not res.get("shap_importance"):
+                continue
+            for feat, val in res["shap_importance"].items():
+                totals[feat].append(val)
+            all_ics.append(res.get("mean_ic", 0.0))
+        if not totals:
+            return {"ticker": "ALL", "features": [], "error": "No SHAP data yet"}
+        features = sorted(
+            [{"feature": k, "importance": round(sum(v) / len(v), 6)} for k, v in totals.items()],
+            key=lambda x: x["importance"], reverse=True,
+        )
+        avg_ic = round(sum(all_ics) / len(all_ics), 6) if all_ics else 0.0
+        return {"ticker": "ALL", "features": features[:8], "mean_ic": avg_ic}
+
+    res = latest_run.get(ticker.upper(), {})
+    if "error" in res:
+        return {"ticker": ticker, "features": [], "error": res["error"]}
+    shap = res.get("shap_importance", {})
+    features = sorted(
+        [{"feature": k, "importance": round(v, 6)} for k, v in shap.items()],
+        key=lambda x: x["importance"], reverse=True,
+    )
+    return {"ticker": ticker, "features": features[:8], "mean_ic": res.get("mean_ic", 0.0)}
+
+
+@app.get("/api/stream", tags=["intraday"])
+async def stream_live_bars(tickers: str = "AAPL,MSFT,NVDA"):
+    """
+    Server-Sent Events (SSE) endpoint — streams the latest bar for each ticker.
+
+    What you learn:
+      - SSE vs WebSocket: SSE is one-directional server→client, works over
+        standard HTTP/1.1, simpler for dashboards (no handshake needed).
+      - The browser connects with: new EventSource('/api/stream')
+      - Each event is formatted as: "data: {json}\\n\\n"
+      - Comment lines (": ping ...\\n\\n") are heartbeats — they keep
+        load-balancers and Vite proxy from closing the connection after 30s.
+
+    Falls back to synthetic random-walk data when no Alpaca API key is configured.
+    Green dot in UI = connected. Grey dot = disconnected.
+    """
+    from fastapi.responses import StreamingResponse
+    from alpha_flow.data.alpaca_stream import poll_latest_bars, heartbeat_sse
+
+    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+
+    async def event_gen():
+        # Initial handshake event — browser EventSource.onopen fires immediately
+        import json as _json
+        connected_payload = _json.dumps({"type": "connected", "tickers": ticker_list})
+        yield f"data: {connected_payload}\n\n"
+        async for bar in poll_latest_bars(ticker_list, interval_seconds=15):
+            yield bar.to_sse()
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control":     "no-cache",
+            "X-Accel-Buffering": "no",        # disable nginx buffering
+            "Connection":        "keep-alive",
+        },
+    )
+

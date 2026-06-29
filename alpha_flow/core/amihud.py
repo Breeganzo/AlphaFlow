@@ -38,22 +38,9 @@ def kyle_lambda(df: pd.DataFrame, window: int = AMIHUD_WINDOW) -> pd.Series:
     is_buy = (df["close"] >= df["open"]).astype(float)               # 1=buy bar, 0=sell bar
     net_ofi = df["volume"] * (2 * is_buy - 1)                        # buy_vol - sell_vol
 
-    lambdas = []
-    for i in range(len(df)):
-        if i < window:
-            lambdas.append(np.nan)
-            continue
-        dp_win  = dp.iloc[i - window:i].values
-        ofi_win = net_ofi.iloc[i - window:i].values
-        # Drop any NaN rows within the window
-        mask    = ~(np.isnan(dp_win) | np.isnan(ofi_win))
-        dp_w    = dp_win[mask]
-        ofi_w   = ofi_win[mask]
-        if len(dp_w) < 5:
-            lambdas.append(np.nan)
-            continue
-        cov = np.cov(dp_w, ofi_w, ddof=1)
-        lam = cov[0, 1] / max(cov[1, 1], 1e-12)
-        lambdas.append(lam)
-
-    return pd.Series(lambdas, index=df.index).rename("kyle_lambda")
+    # Vectorised rolling covariance — O(n) instead of the old O(n×window) loop.
+    # Handles Phase 2 intraday datasets (~3,276 hourly bars) without timeout.
+    roll_cov = dp.rolling(window).cov(net_ofi)           # cov(Δprice, net_OFI)
+    roll_var = net_ofi.rolling(window).var(ddof=1)        # var(net_OFI)
+    lam      = roll_cov / roll_var.clip(lower=1e-12)      # λ = cov / var
+    return lam.rename("kyle_lambda")

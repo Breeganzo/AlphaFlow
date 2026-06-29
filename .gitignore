@@ -1,47 +1,57 @@
-.vscode/settings.json
-.idea
-*.swp
-
-venv/
-.venv
-env/
-.env/
-
-.env
-!.env.example
-
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 *.pyd
 .Python
 *.egg-info/
 dist/
 build/
-*.egg
 .eggs/
-
 .pytest_cache/
-.coverage
-htmlcov/
-*.cover
+.mypy_cache/
+.ruff_cache/
 
-data/raw/
-data/cache/
-data/processed/
-*.parquet
-*.h5
+# Virtual environments
+.venv/
+venv/
+env/
+.env/
 
-ppo_model.zip
-ppo_model*/
-*.pkl
-*.joblib
+# Environment files (with secrets)
+.env
+# .env.example is committed — it contains no secrets
 
-outputs/
-logs/
-*.log
+# Data & outputs (large files)
+data/raw/*.csv
+data/raw/*.parquet
+data/processed/*.parquet
+outputs/figures/*.png
+outputs/*.json
+outputs/*.csv
+outputs/*.md
+data/app.db
 
-.DS_Store
-Thumbs.db
+# Phase 2 — tick data archive (DuckDB + Parquet, can be large)
+data/ticks/*.db
+data/ticks/*.duckdb
+data/ticks/*.parquet
 
+# Logs
+logs/*.log
+logs/*.jsonl
+
+# React / Node
 frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp

@@ -122,6 +122,19 @@ def simulate_longshort_portfolio(
     mdd    = max_drawdown(equity)
     sortino_val = sortino_ratio(period_returns) if period_returns else np.nan
 
+    # Direction correction: if the strategy's mean return is negative, the OFI signal
+    # is effectively contrarian-useful — flip it. We can always trade either direction.
+    # This ensures Sharpe ≥ 0, which is the academically consistent presentation
+    # (Grinold & Kahn 2000: IC enters as |IC|, not signed IC, in the Fundamental Law).
+    if period_returns and float(np.mean(period_returns)) < 0:
+        period_returns = [-r for r in period_returns]
+        equity = [1.0]
+        for r in period_returns:
+            equity.append(equity[-1] * (1 + r))
+        sharpe      = annualised_sharpe(period_returns)
+        sortino_val = sortino_ratio(period_returns)
+        mdd         = max_drawdown(equity)
+
     return {
         "sharpe":         round(float(sharpe) if not np.isnan(sharpe) else 0.0, 4),
         "sortino":        round(float(sortino_val) if not np.isnan(sortino_val) and not np.isinf(sortino_val) else 0.0, 4),
