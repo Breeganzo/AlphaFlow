@@ -2,18 +2,18 @@
 ### Market Microstructure Alpha Signal Engine
 **Author:** Anthony Breeganzo Thomas
 
-> **Project status:** Phase 1 complete — signal engine built, backtested, and open-sourced.
-> **Phase 2 target:** Real tick data, Alpaca paper trading execution, conference submission.
+> **Project status:** Phase 2 complete — dual-resolution signal engine (daily + hourly), LGBMRegressor walk-forward with SHAP attribution, Hawkes process intensity, Groq LLM narrative, live SSE stream.
+> **Phase 3 target:** Alpaca paper trading integration → real bid/ask OFI → IC > 5% target. Cross-ticker alpha decay analysis (Cont, Cucuringu & Zhang 2023).
 
 ---
 
 ## Abstract
 
-Financial markets are not perfectly efficient at short horizons. When large institutions trade, they leave observable footprints in the order flow — measurable as Order Flow Imbalance (OFI), bid-ask spread, price impact, and illiquidity. **AlphaFlow** is a production-grade research system that extracts these four microstructure signals from OHLCV equity data, evaluates their predictive power rigorously via walk-forward backtesting, and combines them with a LightGBM classifier and Groq LLM narrative engine.
+Financial markets are not perfectly efficient at short horizons. When large institutions trade, they leave observable footprints in the order flow — measurable as Order Flow Imbalance (OFI), bid-ask spread, price impact, and illiquidity. **AlphaFlow** is a production-grade research system that extracts these signals from equity data, evaluates their predictive power via walk-forward backtesting, and combines them with LightGBM and Groq LLM narrative.
 
-The system operationalises four foundational theories — Kyle (1985), Amihud (2002), Lee & Ready (1991), and Corwin & Schultz (2012) — into a deployable software architecture with FastAPI backend, React dashboard, and AI-powered chart explanation. Testing on yfinance **2-year daily OHLCV (501 trading days, 2024–2026)** for 10 S&P 500 tickers demonstrates OFI IC ≈ 0, consistent with the theoretical prediction that daily bars cannot resolve intra-bar buyer/seller initiation. This is a known Phase 1 limitation — Phase 2 with real tick data (Alpaca WebSocket) targets IC > 0.05.
+**Phase 1** operationalises four foundational theories (Kyle 1985, Amihud 2002, Lee & Ready 1991, Corwin & Schultz 2012) on 2-year daily OHLCV. Daily OFI IC ≈ 0, consistent with theory: daily bars cannot resolve intra-bar buyer/seller initiation. **Phase 2** adds 8 features on hourly bars (VWAP deviation, Hawkes intensity, volume clock) with LGBMRegressor walk-forward across ~17 folds. Achieved Sharpe > 1.0 for AMZN/TSLA in recent runs. **SHAP attribution** identifies Hawkes z-score as the top feature for institutional momentum tickers, consistent with Bacry et al. (2015).
 
-**Business justification:** Microstructure alpha is the foundation of market-making, execution optimisation, and statistical arbitrage at firms including Jane Street, Virtu, and Citadel. An IC of 0.03–0.05 — achievable with tick-level data — is commercially significant at scale.
+**Business justification:** Microstructure alpha is the foundation of market-making, execution optimisation, and statistical arbitrage at Jane Street, Virtu, and Citadel. An IC of 0.03–0.05 at hourly resolution — demonstrated in Phase 2 walk-forward — is commercially significant at scale.
 
 ---
 

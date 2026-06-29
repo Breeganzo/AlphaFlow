@@ -27,6 +27,11 @@ shap>=0.45.0
 # Execution
 alpaca-py>=0.20.0
 
+# Phase 2 — intraday data storage and live streaming
+duckdb>=0.10.0
+websockets>=12.0
+pyarrow>=14.0.0
+
 # Visualisation
 matplotlib>=3.8.0
 seaborn>=0.13.0

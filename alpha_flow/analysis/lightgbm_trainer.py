@@ -85,3 +85,19 @@ def walk_forward_train(df: pd.DataFrame,
         "ic_per_fold": ics,
         "mean_ic":     float(np.mean(ics)) if ics else np.nan,
     }
+
+
+# ─── Phase 2 additive addition ─────────────────────────────────────────────────
+
+def build_intraday_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Phase 2 feature matrix — wraps intraday_engine.build_intraday_feature_matrix().
+
+    This function exists so callers that already import from lightgbm_trainer
+    can access Phase 2 features without changing their import paths.
+    The implementation lives in intraday_engine.py to keep concerns separated.
+
+    Phase 1 build_features() and walk_forward_train() are UNCHANGED above.
+    """
+    from alpha_flow.analysis.intraday_engine import build_intraday_feature_matrix
+    return build_intraday_feature_matrix(df)

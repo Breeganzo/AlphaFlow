@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 
 from alpha_flow.config.settings import TICKERS, SIGNAL_THRESHOLD
-from alpha_flow.data.data_feed import get_daily_bars
+from alpha_flow.data.data_feed import get_daily_bars, get_simulated_l1
 from alpha_flow.core.ofi_calculator import rolling_ofi_zscore
 from alpha_flow.core.amihud import amihud_ratio, kyle_lambda
 from alpha_flow.core.spread_tracker import corwin_schultz_spread

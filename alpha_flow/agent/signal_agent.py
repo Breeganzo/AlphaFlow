@@ -159,6 +159,20 @@ Rules:
 3. Reference {sector_hint} or the most anomalous metric
 4. Max 25 words. Output EXACTLY one line: REASON: [sentence]"""
 
+    # Phase 2: add intraday context to the prompt when running in hourly mode
+    if state.get("resolution") == "hourly":
+        vwap_z    = state.get("vwap_zscore", 0.0)
+        hawkes_z  = state.get("hawkes_zscore", 0.0)
+        vol_z     = state.get("volume_zscore", 0.0)
+        shap_top  = state.get("shap_top_feature", "ofi_zscore")
+        prompt += f"""
+
+Phase 2 intraday signals (hourly resolution):
+  VWAP Deviation Z:     {vwap_z:+.3f}  (<-1.5 = below VWAP → reversion buy; >+1.5 = above VWAP → reversion sell)
+  Hawkes Intensity Z:   {hawkes_z:+.3f}  (>+2 = institutional activity burst detected)
+  Volume Imbalance Z:   {vol_z:+.3f}  (>0 = net buying; <0 = net selling)
+  Top SHAP feature:     {shap_top}  (most influential signal for this prediction)"""
+
     text = _groq_call(prompt, temperature=0.1, max_tokens=80)
 
     reason = ""

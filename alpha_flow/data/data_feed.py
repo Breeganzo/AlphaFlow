@@ -277,11 +277,18 @@ def _fetch_yfinance_daily(ticker: str, raw_path: Path, years: int) -> pd.DataFra
 
 # ── Private: Phase 2 stub ──────────────────────────────────────────────────────
 def _alpaca_live(ticker: str, n_bars: int) -> pd.DataFrame:
-    """Phase 2 stub — Alpaca WebSocket streaming. Requires live credentials."""
-    raise NotImplementedError(
-        "Phase 2 real-time feed not yet activated. "
-        "Set ALPACA_USE_LIVE=true and ensure Alpaca Algo Trader subscription is active."
-    )
+    """
+    Phase 2 implementation — delegates to intraday_feed.get_alpaca_1min().
+    Falls back to synthetic data if no Alpaca key or the fetch fails.
+    """
+    try:
+        from alpha_flow.data.intraday_feed import get_alpaca_1min
+        df = get_alpaca_1min(ticker, days=max(5, n_bars // 390))
+        if df is not None and not df.empty:
+            return df.tail(n_bars)
+    except Exception as exc:
+        print(f"  [data_feed] Alpaca live fetch failed for {ticker}: {exc}")
+    return _synthetic_fallback(ticker, n_bars)
 
 
 # ── Private: synthetic fallback ───────────────────────────────────────────────
