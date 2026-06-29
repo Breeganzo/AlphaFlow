@@ -21,6 +21,10 @@ jobs:
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
+          # Python 3.11 — most stable for C extensions (SHAP, LightGBM, NumPy).
+          # Python 3.13 causes segfaults in SHAP TreeExplainer on Ubuntu CI
+          # due to changed C memory model (shap issue #3668). Upgrade when
+          # shap>=0.47 and lightgbm>=4.6 confirm 3.13 support.
           python-version: "3.11"
           cache: pip
 

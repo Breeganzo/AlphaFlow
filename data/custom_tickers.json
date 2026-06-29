@@ -1,3 +1,9 @@
 {
-  "tickers": []
+  "tickers": [
+    {
+      "ticker": "GS",
+      "name": "The Goldman Sachs Group, Inc.",
+      "sector": "Financials"
+    }
+  ]
 }

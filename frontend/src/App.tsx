@@ -99,8 +99,13 @@ function fmtSmall(v: number, decimals = 4): string {
 function formatTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   try {
-    const raw = iso.endsWith('Z') ? iso : (iso.includes('T') ? iso + 'Z' : iso + 'T00:00:00Z')
-    return new Date(raw).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) + ' UTC'
+    // If string already has a timezone offset (+00:00 or Z) use it as-is.
+    // Otherwise append Z (UTC) so the browser doesn't treat it as local time.
+    const hasOffset = iso.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(iso)
+    const raw = hasOffset ? iso : (iso.includes('T') ? iso + 'Z' : iso + 'T00:00:00Z')
+    const d = new Date(raw)
+    if (isNaN(d.getTime())) return iso   // guard: never show "Invalid Date"
+    return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) + ' UTC'
   } catch { return iso }
 }
 function nowUTC() {
