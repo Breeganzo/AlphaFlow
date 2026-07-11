@@ -1,6 +1,6 @@
 """
 core/hawkes.py
-Phase 2: Hawkes process intensity for self-exciting order flow.
+Hourly: Hawkes process intensity for self-exciting order flow.
 
 A Hawkes process models events that trigger more events — like earthquakes
 triggering aftershocks. In finance: a large buy order triggers momentum chasers,

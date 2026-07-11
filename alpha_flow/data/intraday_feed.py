@@ -1,15 +1,22 @@
 """
 data/intraday_feed.py
-Phase 2: Intraday data loader — three-tier strategy:
+Hourly: Intraday data loader — three-tier strategy:
 
-  Tier 1 (PRIMARY)   — yfinance 1-hour bars, up to 730 days (~2 years)
-                       Free. Cached to Parquet. Used for all signal computation.
+  Tier 1 (HOURLY)    — Alpaca REST API 1-hour bars when ALPACA_API_KEY is set,
+                       else yfinance 1-hour bars. Both are currently windowed
+                       to 730 days (~2 years) for signal computation. Alpaca's
+                       IEX feed can technically serve further back than yfinance's
+                       730-day hourly cap, but this app does not request more
+                       than 2 years by default (see get_alpaca_hourly's `years`
+                       param). Cached to Parquet.
 
-  Tier 2 (SECONDARY) — Alpaca REST API 1-minute bars via IEX free tier
-                       Free with API key. 7+ years of history. IEX = 2-5% of
-                       US market volume (documented limitation — academically
-                       acceptable for research). Cached to DuckDB for fast
-                       columnar queries.
+  Tier 2 (1-MINUTE)  — Alpaca REST API 1-minute bars via IEX free tier.
+                       Free with API key. IEX's API supports several years of
+                       1-min history, but this app only backfills the most
+                       recent `days` (default 365) per run, growing the DuckDB
+                       cache incrementally via delta-append on subsequent runs.
+                       IEX = 2-5% of US market volume (documented limitation —
+                       academically acceptable for research).
 
   Tier 3 (FALLBACK)  — Graceful None return when Alpaca key is absent.
                        Callers must handle None and fall back to hourly.
@@ -56,7 +63,7 @@ def get_hourly_bars(ticker: str, years: int = 2) -> pd.DataFrame:
     """
     Fetch hourly OHLCV bars from Yahoo Finance (up to 730 days / ~2 years).
 
-    Uses the same 8-step cleaning protocol as Phase 1 daily data.
+    Uses the same 8-step cleaning protocol as daily data.
     Caches to data/ticks/{ticker}_hourly.parquet for fast re-reads.
 
     What you learn building this:
@@ -126,7 +133,9 @@ def get_alpaca_1min(ticker: str, days: int = 365) -> pd.DataFrame | None:
     Fetch 1-minute OHLCV bars from Alpaca REST API (IEX free tier).
 
     Alpaca free tier provides:
-      - 7+ years of historical 1-min bars via IEX exchange
+      - Several years of historical 1-min bars available via IEX exchange
+        (this app backfills only the most recent `days` per call, default 365,
+        and grows the cache incrementally over subsequent runs)
       - IEX coverage: ~2-5% of US market volume (documented limitation)
       - 200 API calls/min rate limit
       - 15-minute delayed data (not real-time) on free tier
@@ -222,6 +231,102 @@ def get_alpaca_1min(ticker: str, days: int = 365) -> pd.DataFrame | None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# TIER 1B — Alpaca REST API 1-hour bars (preferred when key is present)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def get_alpaca_hourly(ticker: str, years: int = 2) -> pd.DataFrame:
+    """
+    Fetch 1-hour OHLCV bars from Alpaca REST API.
+
+    Alpaca's IEX feed can technically serve TimeFrame.Hour data further back
+    than yfinance's 730-day cap, but this function defaults to `years=2` for
+    parity with the yfinance tier — pass a larger `years` value to fetch
+    deeper history. Uses IEX free-tier feed. Results cached to Parquet.
+
+    Returns empty DataFrame if ALPACA_API_KEY is absent or the fetch fails —
+    caller (get_intraday_bars) will fall back to yfinance.
+    """
+    if not ALPACA_API_KEY:
+        return pd.DataFrame()
+
+    cache_path = _TICKS_DIR / f"{ticker}_alpaca_hourly.parquet"
+
+    # ── Check cache freshness (< 2 hours old) ────────────────────────────────
+    if cache_path.exists():
+        mtime = datetime.fromtimestamp(cache_path.stat().st_mtime, tz=timezone.utc)
+        age_hours = (datetime.now(tz=timezone.utc) - mtime).total_seconds() / 3600
+        if age_hours < 2:
+            return pd.read_parquet(cache_path)
+
+    try:
+        from alpaca.data.historical import StockHistoricalDataClient
+        from alpaca.data.requests import StockBarsRequest
+        from alpaca.data.timeframe import TimeFrame
+
+        start_dt = datetime.now(tz=timezone.utc) - timedelta(days=years * 365)
+
+        # ── Delta-append: only fetch bars newer than what we already have ─────
+        if cache_path.exists():
+            existing = pd.read_parquet(cache_path)
+            if not existing.empty:
+                last_ts = existing.index.max()
+                if last_ts.tzinfo is None:
+                    last_ts = last_ts.tz_localize("UTC")
+                start_dt = max(start_dt, last_ts + timedelta(hours=1))
+
+        client = StockHistoricalDataClient(
+            api_key=ALPACA_API_KEY,
+            secret_key=ALPACA_SECRET_KEY,
+        )
+
+        request = StockBarsRequest(
+            symbol_or_symbols=ticker,
+            timeframe=TimeFrame.Hour,
+            start=start_dt,
+            end=datetime.now(tz=timezone.utc) - timedelta(minutes=16),  # 15-min delay
+            feed=ALPACA_DATA_FEED,
+        )
+
+        bars = client.get_stock_bars(request)
+        df_new = bars.df
+
+        if df_new.empty and not cache_path.exists():
+            return pd.DataFrame()
+
+        if not df_new.empty:
+            # ── Normalise MultiIndex columns ──────────────────────────────────
+            if isinstance(df_new.index, pd.MultiIndex):
+                lvl_values = df_new.index.get_level_values("symbol")
+                if ticker in lvl_values:
+                    df_new = df_new.xs(ticker, level="symbol")
+                else:
+                    df_new = df_new.droplevel(0)
+            df_new.index = pd.to_datetime(df_new.index).tz_convert("UTC")
+            df_new.columns = [c.lower() for c in df_new.columns]
+            df_new = df_new[["open", "high", "low", "close", "volume"]].dropna()
+            df_new = _clean_ohlcv_intraday(df_new, ticker)
+
+            # ── Merge with existing cache ─────────────────────────────────────
+            if cache_path.exists():
+                existing = pd.read_parquet(cache_path)
+                df_new = pd.concat([existing, df_new])
+                df_new = df_new[~df_new.index.duplicated(keep="last")]
+                df_new = df_new.sort_index()
+
+            df_new.to_parquet(cache_path, engine="pyarrow", compression="snappy")
+            return df_new
+
+        # No new data but cache exists — return stale cache
+        return pd.read_parquet(cache_path)
+
+    except Exception as exc:
+        print(f"  [intraday_feed] Alpaca hourly failed for {ticker}: {exc}")
+        if cache_path.exists():
+            return pd.read_parquet(cache_path)
+        return pd.DataFrame()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PUBLIC ROUTER
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -229,8 +334,12 @@ def get_intraday_bars(ticker: str, resolution: str = "1h") -> pd.DataFrame:
     """
     Public entry point — routes to correct data tier.
 
-    Resolution '1h' → yfinance hourly (always available, free)
-    Resolution '1m' → Alpaca IEX 1-min → fallback to yfinance hourly
+    Resolution '1h':
+      → Alpaca 1-hour bars when ALPACA_API_KEY is set (preferred; currently
+        windowed to 2 years by default, same as yfinance — see get_alpaca_hourly)
+      → yfinance 1-hour bars as fallback (free, 730-day cap)
+    Resolution '1m':
+      → Alpaca IEX 1-min → fallback to yfinance hourly
 
     Callers should use resolution='1h' for signal computation.
     Resolution '1m' is for Hawkes process intensity fitting.
@@ -239,10 +348,15 @@ def get_intraday_bars(ticker: str, resolution: str = "1h") -> pd.DataFrame:
         df_1m = get_alpaca_1min(ticker)
         if df_1m is not None and not df_1m.empty:
             return df_1m
-        # Fallback: return hourly bars (caller must handle lower resolution)
         print(f"  [intraday_feed] 1-min unavailable for {ticker}, using 1h fallback")
         return get_hourly_bars(ticker)
     else:
+        # Prefer Alpaca hourly when key is present — richer history than yfinance
+        if ALPACA_API_KEY:
+            df_alpaca = get_alpaca_hourly(ticker)
+            if not df_alpaca.empty:
+                return df_alpaca
+            print(f"  [intraday_feed] Alpaca hourly failed for {ticker}, falling back to yfinance")
         return get_hourly_bars(ticker)
 
 
@@ -252,7 +366,7 @@ def get_intraday_bars(ticker: str, resolution: str = "1h") -> pd.DataFrame:
 
 def _clean_ohlcv_intraday(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     """
-    Apply 8-step cleaning to intraday OHLCV (same logic as Phase 1 daily).
+    Apply 8-step cleaning to intraday OHLCV (same logic as daily).
     Adapted for intraday: clips ±5% per bar (vs ±20% for daily).
     """
     required = ["open", "high", "low", "close", "volume"]
