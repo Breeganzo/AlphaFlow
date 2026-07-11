@@ -14,9 +14,9 @@ Modules:
     amihud          : Illiquidity ratio + Kyle lambda — Amihud (2002), Kyle (1985)
     spread_tracker  : Corwin-Schultz effective spread — Corwin & Schultz (2012)
     lee_ready       : Tick-sign classification — Lee & Ready (1991)
-    vwap            : Session VWAP and deviation z-score (Phase 2)
-    hawkes          : Hawkes process intensity — event-driven order clustering (Phase 2)
-    volume_clock    : Dollar-bar resampling + volume imbalance (Phase 2)
+    vwap            : Session VWAP and deviation z-score (hourly)
+    hawkes          : Hawkes process intensity — event-driven order clustering (hourly)
+    volume_clock    : Volume-clock signed imbalance + z-score (hourly)
 """
 from alpha_flow.core.ofi_calculator import compute_ofi, rolling_ofi_zscore
 from alpha_flow.core.amihud import amihud_ratio, kyle_lambda

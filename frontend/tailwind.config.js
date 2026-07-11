@@ -1,20 +1,10 @@
 /** @type {import('tailwindcss').Config} */
+// Theming is handled at runtime via the DARK_S / LIGHT_S objects in src/App.tsx
+// (inline styles), so Tailwind here only provides the base reset in index.css.
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
-    extend: {
-      colors: {
-        brand: {
-          bg:       "#020617",
-          surface:  "#0f172a",
-          border:   "#1e293b",
-          primary:  "#67e8f9",
-          text:     "#a5f3fc",
-          muted:    "#164e63",
-          accent:   "#cffafe",
-        },
-      },
-    },
+    extend: {},
   },
   plugins: [],
 }

@@ -1,22 +1,20 @@
 """
 alpha_flow/data/data_feed.py
 ============================
-Market data abstraction layer for AlphaFlow (P2).
+Market data abstraction layer for AlphaFlow.
 
-Data hierarchy (Phase 1 → Phase 2):
-  Phase 1 (current): yfinance free tier — 2-year daily OHLCV bars cached to CSV.
-                     Cache is auto-refreshed (delta fetch) when last row is stale (> 1 day old).
-                     Suitable for research, backtesting, and IC validation.
-  Phase 2 (funded):  Alpaca Streaming WebSocket — real-time L1 tick data.
-                     Requires Alpaca Algo Trader subscription (~$240/yr).
-                     Activate by setting ALPACA_USE_LIVE=true in .env.
-  Fallback:          Synthetic OHLCV generated with ticker-specific random seed.
-                     Used only when yfinance is unreachable. Always labeled in outputs.
+Data sources:
+  Primary:   yfinance free tier — 2-year daily OHLCV bars, delta-appended CSV cache.
+             Refreshed automatically when last row is stale (> 1 trading day old).
+  Fallback:  Synthetic OHLCV with ticker-specific random seed — used only when
+             yfinance is unreachable; always labeled in outputs.
+
+Note: Alpaca IEX (hourly bars) is handled separately by intraday_feed.py.
 
 Data files (committed to git):
   data/raw/{ticker}.csv        — raw OHLCV bars (append-only)
   data/raw/metadata.json       — last_refreshed timestamp per ticker
-  data/processed/              — reserved for feature CSVs (Phase 2)
+  data/processed/              — reserved for feature CSVs (hourly)
 
 References
 ----------
@@ -176,10 +174,6 @@ def get_daily_bars(ticker: str, years: int = 2, force_refresh: bool = False) -> 
     years         : int  — history to maintain (default 2 = ~504 bars)
     force_refresh : bool — bypass cache and re-fetch from yfinance
     """
-    # Phase 2: Alpaca live stream takes priority
-    if os.getenv("ALPACA_USE_LIVE", "false").lower() == "true":
-        return _alpaca_live(ticker, n_bars=years * 252)
-
     raw_path = RAW_DIR / f"{ticker}.csv"
 
     # Load cached CSV if fresh
@@ -201,15 +195,6 @@ def get_daily_bars(ticker: str, years: int = 2, force_refresh: bool = False) -> 
     return _synthetic_fallback(ticker, n_bars=years * 252)
 
 
-def get_simulated_l1(ticker: str, n_bars: int = 200) -> pd.DataFrame:
-    """
-    Backward-compatible wrapper.
-    Returns daily bars (same OHLCV schema); `n_bars` is respected via tail().
-    """
-    df = get_daily_bars(ticker, years=2)
-    return df.tail(n_bars)
-
-
 def refresh_all_tickers(tickers: list[str]) -> dict[str, int]:
     """
     Force-refresh daily bar CSV for every ticker in `tickers`.
@@ -226,18 +211,141 @@ def refresh_all_tickers(tickers: list[str]) -> dict[str, int]:
     return result
 
 
+# ── Survivorship-bias diagnostic ───────────────────────────────────────────────
+def check_universe_survivorship(tickers: list[str] | None = None) -> dict:
+    """
+    Survivorship-bias diagnostic for the trading universe.
+
+    Why this exists: `alpha_flow.config.settings.TICKERS` lists CURRENT S&P 500
+    constituents, not the point-in-time membership as of 2 years ago. Names that
+    were delisted, merged, acquired, or dropped from the index within the
+    backtest window are excluded from the universe by construction — classic
+    survivorship bias (Brown, Goetzmann & Ross 1995, "Survival"; also see
+    Elton, Gruber & Blake 1996 on mutual-fund survivorship). Backtesting only
+    on "survivors" tends to overstate historical performance versus what a
+    point-in-time investor could actually have captured.
+
+    This function does NOT fix survivorship bias — doing so requires
+    point-in-time historical index-constituent data, which is not available
+    from the free data sources this project uses (yfinance/Alpaca). Instead,
+    it makes the exposure MEASURABLE and disclosed at runtime rather than only
+    asserted in prose: it flags any ticker whose cached raw price history
+    starts meaningfully later than the rest of the universe (e.g. a recent
+    IPO), which is the adjacent, detectable symptom — a ticker added to the
+    universe without a full window of history — as opposed to the
+    undetectable case of a delisted name being absent entirely.
+
+    Returns:
+        dict with universe_size, expected_start_date, tickers_with_full_history,
+        tickers_with_partial_history (ticker/first_available_date/days_short),
+        and a `disclosure` string suitable for surfacing in reports/API responses.
+    """
+    from alpha_flow.config.settings import get_all_tickers
+    tickers = tickers or get_all_tickers()
+
+    disclosure = (
+        "Universe = CURRENT constituent tickers only, not point-in-time historical "
+        "index membership. Companies delisted, merged, or dropped from the index "
+        "within the backtest window are excluded by construction (survivorship "
+        "bias — Brown, Goetzmann & Ross 1995). This check detects only the "
+        "adjacent, measurable symptom (a ticker with a shorter-than-expected "
+        "cached price history, e.g. a recent IPO); it cannot detect names absent "
+        "from the universe entirely, which requires point-in-time constituent "
+        "data not available from this project's free data sources."
+    )
+
+    first_dates: dict[str, pd.Timestamp] = {}
+    for t in tickers:
+        raw_path = RAW_DIR / f"{t}.csv"
+        if not raw_path.exists():
+            continue
+        try:
+            df = pd.read_csv(raw_path, usecols=[0], parse_dates=[0])
+            if not df.empty:
+                first_dates[t] = pd.Timestamp(df.iloc[:, 0].min())
+        except Exception:
+            continue
+
+    if not first_dates:
+        return {
+            "universe_size": len(tickers),
+            "expected_start_date": None,
+            "tickers_with_full_history": 0,
+            "tickers_with_partial_history": [],
+            "disclosure": disclosure + " (No cached raw data found yet — run the pipeline first.)",
+        }
+
+    # "Expected" start = earliest start date seen across the universe, i.e.
+    # what a ticker with a full, unbroken 2-year history looks like.
+    expected_start = min(first_dates.values())
+    partial: list[dict] = []
+    for t, first_date in first_dates.items():
+        days_short = int((first_date - expected_start).days)
+        if days_short > 30:  # tolerance for holidays/weekends/minor data gaps
+            partial.append({
+                "ticker": t,
+                "first_available_date": first_date.strftime("%Y-%m-%d"),
+                "days_short": days_short,
+            })
+
+    return {
+        "universe_size": len(tickers),
+        "expected_start_date": expected_start.strftime("%Y-%m-%d"),
+        "tickers_with_full_history": len(first_dates) - len(partial),
+        "tickers_with_partial_history": sorted(partial, key=lambda x: -x["days_short"]),
+        "disclosure": disclosure,
+    }
+
+
 # ── Private: yfinance fetch ────────────────────────────────────────────────────
 def _fetch_yfinance_daily(ticker: str, raw_path: Path, years: int) -> pd.DataFrame | None:
+    """
+    Fetch fresh daily bars from yfinance and merge into the cached CSV.
+
+    Incremental by design: when a cached CSV already exists, this only requests
+    bars STRICTLY AFTER the last cached date — NOT the full trailing N-year
+    window again. Cheaper/faster across a 50-ticker universe and avoids
+    re-downloading years of history we already have just to pick up 1-2 new
+    days. Falls back to a full `period=f'{years}y'` fetch only when there's no
+    existing cache yet (brand-new/custom ticker) or the cached CSV is unreadable.
+    """
     try:
         import yfinance as yf
 
-        period = f"{years}y"
-        fresh = yf.download(
-            ticker, period=period, interval="1d",
-            auto_adjust=True, progress=False,
-        )
+        existing: pd.DataFrame | None = None
+        if raw_path.exists():
+            try:
+                existing = pd.read_csv(raw_path, index_col=0, parse_dates=True)
+                existing.index = pd.to_datetime(existing.index).normalize()
+            except Exception:
+                existing = None
+
+        if existing is not None and not existing.empty:
+            last_cached = existing.index.max().date()
+            today = datetime.utcnow().date()
+            if last_cached >= today:
+                fresh = pd.DataFrame()  # already up to date — nothing new to fetch
+            else:
+                start = (last_cached + timedelta(days=1)).strftime("%Y-%m-%d")
+                end   = (today + timedelta(days=1)).strftime("%Y-%m-%d")  # yfinance `end` is exclusive
+                fresh = yf.download(
+                    ticker, start=start, end=end, interval="1d",
+                    auto_adjust=True, progress=False,
+                )
+        else:
+            # No cache yet — full N-year fetch (first-time or brand-new custom ticker)
+            fresh = yf.download(
+                ticker, period=f"{years}y", interval="1d",
+                auto_adjust=True, progress=False,
+            )
+
         if fresh.empty:
-            return None
+            # Nothing new (weekend/holiday/already current) — still bump metadata
+            # so we don't hit the network again for this ticker today.
+            meta = _load_metadata()
+            meta[ticker] = datetime.utcnow().isoformat()
+            _save_metadata(meta)
+            return existing if existing is not None and not existing.empty else None
 
         # Flatten MultiIndex columns
         if isinstance(fresh.columns, pd.MultiIndex):
@@ -249,15 +357,10 @@ def _fetch_yfinance_daily(ticker: str, raw_path: Path, years: int) -> pd.DataFra
         fresh.index = pd.to_datetime(fresh.index).normalize()
 
         # Merge with existing CSV (append-only, avoid duplicates)
-        if raw_path.exists():
-            try:
-                existing = pd.read_csv(raw_path, index_col=0, parse_dates=True)
-                existing.index = pd.to_datetime(existing.index).normalize()
-                combined = pd.concat([existing, fresh])
-                combined = combined[~combined.index.duplicated(keep="last")]
-                combined = combined.sort_index()
-            except Exception:
-                combined = fresh
+        if existing is not None and not existing.empty:
+            combined = pd.concat([existing, fresh])
+            combined = combined[~combined.index.duplicated(keep="last")]
+            combined = combined.sort_index()
         else:
             combined = fresh
 
@@ -275,23 +378,7 @@ def _fetch_yfinance_daily(ticker: str, raw_path: Path, years: int) -> pd.DataFra
         return None
 
 
-# ── Private: Phase 2 stub ──────────────────────────────────────────────────────
-def _alpaca_live(ticker: str, n_bars: int) -> pd.DataFrame:
-    """
-    Phase 2 implementation — delegates to intraday_feed.get_alpaca_1min().
-    Falls back to synthetic data if no Alpaca key or the fetch fails.
-    """
-    try:
-        from alpha_flow.data.intraday_feed import get_alpaca_1min
-        df = get_alpaca_1min(ticker, days=max(5, n_bars // 390))
-        if df is not None and not df.empty:
-            return df.tail(n_bars)
-    except Exception as exc:
-        print(f"  [data_feed] Alpaca live fetch failed for {ticker}: {exc}")
-    return _synthetic_fallback(ticker, n_bars)
-
-
-# ── Private: synthetic fallback ───────────────────────────────────────────────
+# ── Private: Hourly stub ──────────────────────────────────────────────────────
 def _synthetic_fallback(ticker: str, n_bars: int) -> pd.DataFrame:
     """
     Per-ticker deterministic synthetic daily OHLCV.

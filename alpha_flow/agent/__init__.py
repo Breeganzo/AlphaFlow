@@ -1,7 +1,7 @@
 """alpha_flow.agent — LangGraph orchestration for the full analysis pipeline.
 
-Runs a 6-node directed acyclic graph (DAG) that chains:
-    ingest → ofi → spread → kyle → amihud → lgbm_predict → llm_interpret → aggregate
+Runs a 5-node directed acyclic graph (DAG) that chains:
+    fetch_data → compute_features → intraday_features → llm_interpret → summarise
 
 Each node is a pure function that mutates the shared pipeline state dict.
 Groq llama-3.3-70b-versatile provides plain-English signal narratives.

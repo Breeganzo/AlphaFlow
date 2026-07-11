@@ -1,27 +1,23 @@
 """
 data/alpaca_stream.py
-Phase 2: Live data streaming from Alpaca WebSocket (IEX free tier).
+Live bar streaming from Alpaca (IEX free tier) via REST polling → SSE.
 
 Architecture:
   - Free Alpaca tier: 15-minute delayed data via REST polling (no WebSocket)
-  - Alpaca Algo Trader Plus ($99/mo): real-time WebSocket
-  - This module provides a unified interface: callers see a stream of bars
-    regardless of whether they come from WebSocket or polling.
+  - Alpaca Algo Trader Plus ($99/mo): real-time WebSocket (not used here)
+  - This module provides a unified async generator: callers see a stream of
+    bars whether they come from Alpaca REST polling or the synthetic fallback.
+  - Graceful degradation: with no API key it emits a synthetic random walk so
+    the UI live-dot stays green and the app never crashes.
 
-What you learn building this:
-  - Server-Sent Events (SSE): push data from server to browser without polling
-  - WebSocket vs REST polling: trade-off between latency and cost
-  - Graceful degradation: always have a fallback so the app never crashes
-
-For Phase 2 (free tier), the "live" dot in the UI reflects REST polling every
-60 seconds. True sub-second streaming requires Algo Trader Plus.
+The "live" dot in the UI reflects REST polling; true sub-second streaming
+would require Algo Trader Plus.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import os
-import time
 from datetime import datetime, timedelta, timezone
 from typing import AsyncIterator
 
@@ -61,11 +57,6 @@ class AlpacaStreamBar:
     def to_sse(self) -> str:
         """Format as Server-Sent Event string for FastAPI StreamingResponse."""
         return f"data: {json.dumps(self.to_dict())}\n\n"
-
-
-def heartbeat_sse() -> str:
-    """Keep-alive SSE comment — browsers reset the connection if no data arrives for ~30s."""
-    return f": ping {datetime.now(tz=timezone.utc).isoformat()}\n\n"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -178,36 +169,3 @@ async def _synthetic_stream(
             sleep_chunk = min(HEARTBEAT_INTERVAL, interval_seconds - elapsed)
             await asyncio.sleep(sleep_chunk)
             elapsed += sleep_chunk
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# CONNECTION STATUS
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def get_stream_mode() -> dict:
-    """
-    Return stream mode and connection metadata — used by frontend status dot.
-
-    Returns:
-        {
-            "mode": "alpaca_rest" | "synthetic",
-            "feed": "iex" | "sip" | "synthetic",
-            "delay_minutes": 15 | 0,
-            "connected": True | False,
-        }
-    """
-    if ALPACA_API_KEY:
-        return {
-            "mode":          "alpaca_rest",
-            "feed":          ALPACA_DATA_FEED,
-            "delay_minutes": 15,
-            "connected":     True,
-            "note":          "15-min delayed via IEX free tier. Upgrade to Algo Trader Plus ($99/mo) for real-time.",
-        }
-    return {
-        "mode":          "synthetic",
-        "feed":          "synthetic",
-        "delay_minutes": 0,
-        "connected":     False,
-        "note":          "No ALPACA_API_KEY in .env. Using synthetic random-walk data.",
-    }

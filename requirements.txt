@@ -1,40 +1,39 @@
-# Project 2: Market Microstructure Alpha
+# AlphaFlow — Market Microstructure Alpha Engine
+# Python 3.11+ recommended (CI pins 3.11 for SHAP/LightGBM C-extension stability)
 # Install: pip install -r requirements.txt
 
-# API Backend
+# ── API Backend ────────────────────────────────────────────────────────────────
 fastapi>=0.111.0
 uvicorn>=0.30.0
 python-multipart>=0.0.9
+httpx>=0.27.0                  # FastAPI TestClient; silences starlette deprecation
 
-# Core data
-yfinance>=0.2.40
+# ── Core data ─────────────────────────────────────────────────────────────────
+yfinance>=0.2.40               # Daily OHLCV + hourly fallback when no Alpaca key
 pandas>=2.2.0
-numpy>=1.26.0
+numpy>=1.26.0                  # <2.0 intentional: DuckDB/SHAP compat on all platforms
 python-dotenv>=1.0.0
 
-# LangGraph / LLM
-langgraph>=0.2.0
-langchain-groq>=0.1.0
-langchain-core>=0.2.0
-groq>=0.9.0
+# ── LLM / Agent (narrative layer only — never decides signals) ──────────────────
+langgraph>=0.2.0               # Daily pipeline orchestration (StateGraph)
+groq>=0.9.0                    # Groq SDK (llama-3.3-70b-versatile), free tier
 
-# ML / Stats
-lightgbm>=4.3.0
+# ── ML / Stats ────────────────────────────────────────────────────────────────
+lightgbm>=4.3.0                # Hourly walk-forward LGBMRegressor
 scikit-learn>=1.5.0
 scipy>=1.13.0
-shap>=0.45.0
+shap>=0.45.0                   # Hourly feature attribution
 
-# Execution
-alpaca-py>=0.20.0
+# ── Execution + Intraday data ─────────────────────────────────────────────────
+alpaca-py>=0.20.0              # IEX hourly bars + paper trading (free tier)
+duckdb>=0.10.0                 # 1-min bar columnar storage
+pyarrow>=14.0.0               # Parquet hourly cache
 
-# Phase 2 — intraday data storage and live streaming
-duckdb>=0.10.0
-websockets>=12.0
-pyarrow>=14.0.0
+# ── Scheduling ──────────────────────────────────────────────────────────────────
+apscheduler>=3.10.4            # Nightly cron: auto-refresh data + re-run pipelines
 
-# Visualisation
+# ── Visualisation ─────────────────────────────────────────────────────────────
 matplotlib>=3.8.0
-seaborn>=0.13.0
 
-# Testing
+# ── Testing ───────────────────────────────────────────────────────────────────
 pytest>=8.0.0

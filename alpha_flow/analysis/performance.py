@@ -1,16 +1,19 @@
 """
 analysis/performance.py
-IC, AUC, Sharpe, drawdown and long-short simulation metrics
-for the microstructure alpha engine.
+IC, AUC, Sharpe, Sortino, Calmar, Omega, IC_IR, drawdown and long-short
+simulation metrics for the microstructure alpha engine.
 
 References
 ----------
-Grinold & Kahn (2000) Active Portfolio Management, Ch.6 — IC formula.
+Grinold & Kahn (2000) Active Portfolio Management, Ch.6 — IC, IC_IR, Fundamental Law.
 Sharpe (1994) The Sharpe Ratio. J. Portfolio Management, 21(1), 49–58.
+Sortino & van der Meer (1991) Journal of Portfolio Management.
+Young (1991) The Calmar Ratio. Futures Magazine.
+Keating & Shadwick (2002) A Universal Performance Measure. J. Performance Measurement.
 """
 import numpy as np
 import pandas as pd
-from scipy.stats import spearmanr  # type: ignore
+from scipy.stats import spearmanr, t as t_dist  # type: ignore
 
 
 def information_coefficient(predictions: list, actuals: list) -> float:
@@ -169,7 +172,120 @@ def sortino_ratio(returns: list | np.ndarray, freq: str = "daily") -> float:
 
 def summary_stats(predictions: list, actuals: list) -> dict:
     return {
-        "IC":            f"{information_coefficient(predictions, actuals):.4f}",
-        "AUC":           f"{binary_auc(predictions, actuals):.4f}",
+        "IC":            information_coefficient(predictions, actuals),
+        "AUC":           binary_auc(predictions, actuals),
         "N predictions": len(predictions),
     }
+
+
+def ic_information_ratio(ic_per_fold: list[float]) -> float:
+    """
+    IC Information Ratio (IC_IR) — measures signal consistency, not just strength.
+
+    IC_IR = mean(IC) / std(IC) × √N
+
+    The Fundamental Law of Active Management (Grinold & Kahn 2000, Ch.6) states:
+      Expected IR ≈ IC_IR = IC / σ(IC) × √N
+
+    A high IC_IR means the signal is consistent across folds, not just lucky in one.
+    Benchmark: IC_IR > 0.5 = usable, > 1.0 = good, > 2.0 = excellent.
+
+    Parameters
+    ----------
+    ic_per_fold : list of per-fold IC values from walk-forward validation
+
+    Reference: Grinold, R. & Kahn, R. (2000). Active Portfolio Management, Ch.6.
+    """
+    arr = np.array([x for x in ic_per_fold if not np.isnan(x)], dtype=float)
+    if len(arr) < 2:
+        return np.nan
+    std = float(arr.std(ddof=1))
+    if std < 1e-12:
+        return np.nan
+    return float(arr.mean() / std * np.sqrt(len(arr)))
+
+
+def ic_tstat(ic_per_fold: list[float]) -> tuple[float, float]:
+    """
+    IC t-statistic and two-sided p-value testing H₀: mean(IC) = 0.
+
+    t = mean(IC) / (std(IC) / √N),  df = N − 1
+
+    A t-stat > 2 with p < 0.05 provides statistical evidence the IC is non-zero
+    (i.e., the signal has genuine predictive content beyond noise).
+
+    Parameters
+    ----------
+    ic_per_fold : list of per-fold IC values
+
+    Returns
+    -------
+    (t_stat, p_value) — both NaN if insufficient data.
+    """
+    arr = np.array([x for x in ic_per_fold if not np.isnan(x)], dtype=float)
+    n   = len(arr)
+    if n < 2:
+        return np.nan, np.nan
+    std  = float(arr.std(ddof=1))
+    if std < 1e-12:
+        return np.nan, np.nan
+    tstat   = float(arr.mean() / (std / np.sqrt(n)))
+    pval    = float(t_dist.sf(abs(tstat), df=n - 1) * 2)  # two-sided
+    return round(tstat, 4), round(pval, 6)
+
+
+def calmar_ratio(pnl: np.ndarray | list, hourly_scale: float = 252 * 6.5) -> float:
+    """
+    Calmar Ratio = annualised return / |max drawdown|.
+
+    Developed by Young (1991), the Calmar ratio weights the return by drawdown
+    severity — penalising strategies that achieve gains via large lurking losses.
+    Benchmark: > 0.5 = acceptable, > 1.0 = good, > 3.0 = excellent.
+
+    Parameters
+    ----------
+    pnl          : per-bar P&L series
+    hourly_scale : annualisation factor (default: 252 × 6.5 = 1638 hourly bars/yr)
+
+    Reference: Young, T. W. (1991). The Calmar Ratio. Futures Magazine, Oct.
+    """
+    r = np.asarray(pnl, dtype=float)
+    r = r[~np.isnan(r)]
+    if len(r) < 2:
+        return np.nan
+    ann_return = float(r.mean() * hourly_scale)
+    equity     = np.cumprod(1 + np.clip(r, -0.5, 0.5))
+    equity     = np.insert(equity, 0, 1.0)
+    mdd        = float(max_drawdown(equity))
+    if abs(mdd) < 1e-10:
+        return np.inf if ann_return > 0 else np.nan
+    return round(float(ann_return / abs(mdd)), 4)
+
+
+def omega_ratio(returns: np.ndarray | list, threshold: float = 0.0) -> float:
+    """
+    Omega Ratio — captures the full return distribution, not just σ.
+
+    Ω(L) = Σ max(r − L, 0) / Σ max(L − r, 0)
+
+    Unlike Sharpe (which only uses mean and σ), Omega considers all moments of
+    the distribution. Ω > 1 means more probability mass above L than below L.
+    At L = 0: Ω(0) = profit_factor = gross_wins / gross_losses.
+
+    Benchmark: > 1.0 = positive expectancy, > 2.0 = good, > 3.0 = excellent.
+
+    Parameters
+    ----------
+    returns   : sequence of period returns
+    threshold : minimum acceptable return L (default: 0 = break-even)
+
+    Reference: Keating, C. & Shadwick, W.F. (2002).
+               A Universal Performance Measure. J. Performance Measurement, 6(3).
+    """
+    r    = np.asarray(returns, dtype=float)
+    r    = r[~np.isnan(r)]
+    wins  = np.sum(np.maximum(r - threshold, 0.0))
+    losses = np.sum(np.maximum(threshold - r, 0.0))
+    if losses < 1e-12:
+        return np.inf if wins > 0 else np.nan
+    return round(float(wins / losses), 4)

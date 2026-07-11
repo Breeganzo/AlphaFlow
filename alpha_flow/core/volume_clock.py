@@ -1,6 +1,6 @@
 """
 core/volume_clock.py
-Phase 2: Volume clock / dollar bars and signed volume imbalance.
+Volume-clock signed volume imbalance (hourly feature).
 
 Why time bars are flawed:
   Standard time bars (1 bar per hour) have UNEQUAL information content.
@@ -32,85 +32,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-
-from alpha_flow.config.settings import VOLUME_CLOCK_N
-
-
-def dollar_bars(df: pd.DataFrame, threshold: float = VOLUME_CLOCK_N) -> pd.DataFrame:
-    """
-    Aggregate OHLCV time bars into dollar bars.
-
-    A new bar is emitted every time cumulative dollar value (close × volume)
-    reaches `threshold` dollars. The resulting bars have uniform information
-    content — each one represents the same amount of economic activity.
-
-    Args:
-        df:        DataFrame with DatetimeIndex and [open, high, low, close, volume]
-        threshold: Dollar value threshold per bar (default: $1,000,000)
-
-    Returns:
-        DataFrame with dollar bar OHLCV — typically fewer rows than input.
-        Has a 'bar_count' column showing how many time bars were aggregated.
-
-    What you learn:
-        This is the simplest version of alternative bar sampling. In practice,
-        quant funds use volume bars, tick bars, and dollar imbalance bars.
-        The key insight is that bars should sample by INFORMATION, not by TIME.
-    """
-    if df.empty:
-        return df.copy()
-
-    dv      = (df["close"] * df["volume"]).values
-    opens   = df["open"].values
-    highs   = df["high"].values
-    lows    = df["low"].values
-    closes  = df["close"].values
-    volumes = df["volume"].values
-    index   = df.index
-
-    bars = []
-    cum_dv = 0.0
-    bar_open  = opens[0]
-    bar_high  = highs[0]
-    bar_low   = lows[0]
-    bar_vol   = 0.0
-    bar_start = index[0]
-    bar_count = 0
-
-    for i in range(len(df)):
-        cum_dv   += dv[i]
-        bar_high  = max(bar_high, highs[i])
-        bar_low   = min(bar_low,  lows[i])
-        bar_vol  += volumes[i]
-        bar_count += 1
-
-        if cum_dv >= threshold:
-            bars.append({
-                "ts":        bar_start,
-                "open":      bar_open,
-                "high":      bar_high,
-                "low":       bar_low,
-                "close":     closes[i],
-                "volume":    bar_vol,
-                "bar_count": bar_count,
-            })
-            # Reset for next bar
-            if i + 1 < len(df):
-                bar_open  = opens[i + 1]
-                bar_high  = highs[i + 1]
-                bar_low   = lows[i + 1]
-                bar_start = index[i + 1]
-            cum_dv    = 0.0
-            bar_vol   = 0.0
-            bar_count = 0
-
-    if not bars:
-        return df.copy()   # threshold too large — return original
-
-    result = pd.DataFrame(bars).set_index("ts")
-    result.index = pd.DatetimeIndex(result.index)
-    return result
-
 
 def volume_imbalance(df: pd.DataFrame, window: int = 20) -> pd.Series:
     """

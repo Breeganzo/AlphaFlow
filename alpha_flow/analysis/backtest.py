@@ -223,7 +223,7 @@ def compute_alpha_decay(df: pd.DataFrame, max_lag: int = 10) -> dict:
     IC consistently above ±0.05 at any lag is considered statistically significant.
 
     Args:
-        df:       Single-ticker OHLCV DataFrame from get_simulated_l1()
+        df:       Single-ticker OHLCV DataFrame from get_daily_bars()
         max_lag:  Maximum forward return horizon in bars (default: 10)
 
     Returns:
