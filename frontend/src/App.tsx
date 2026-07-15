@@ -7,8 +7,13 @@ import axios from 'axios'
 // ── Production API URL ────────────────────────────────────────────────────────
 // In production (Render/Vercel), set VITE_API_URL to the backend URL.
 // In local dev, Vite proxy handles /api → localhost:8002 automatically.
-if (import.meta.env.VITE_API_URL) {
-  axios.defaults.baseURL = import.meta.env.VITE_API_URL
+const API_BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, '')
+if (API_BASE_URL) {
+  axios.defaults.baseURL = API_BASE_URL
+}
+
+function apiPath(path: string): string {
+  return API_BASE_URL ? `${API_BASE_URL}${path}` : path
 }
 
 // ── Themes ───────────────────────────────────────────────────────────────────
@@ -2800,7 +2805,7 @@ export default function App() {
   // SSE live stream connection
   useEffect(() => {
     if (resolution !== 'hourly') { setStreamConnected(false); return }
-    const es = new EventSource('/api/stream?tickers=AAPL,MSFT,NVDA')
+    const es = new EventSource(apiPath('/api/stream?tickers=AAPL,MSFT,NVDA'))
     es.onopen    = () => setStreamConnected(true)
     es.onerror   = () => setStreamConnected(false)
     es.onmessage = () => setStreamConnected(true)
