@@ -50,7 +50,7 @@ services:
     envVars:
       # ── Backend URL (set to your Render backend URL after first deploy) ─────
       - key: VITE_API_URL
-        value: https://alphaflow-backend.onrender.com  # UPDATE this after backend is deployed
+        value: https://alphaflow-backend-j0gv.onrender.com # UPDATE this after backend is deployed
     routes:
       - type: rewrite
         source: /*
