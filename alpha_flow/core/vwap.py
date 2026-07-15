@@ -1,6 +1,6 @@
 """
 core/vwap.py
-Phase 2: VWAP (Volume Weighted Average Price) reversion signal.
+Hourly: VWAP (Volume Weighted Average Price) reversion signal.
 
 VWAP is the fair price of the trading day, weighted by how much was traded at
 each price level:

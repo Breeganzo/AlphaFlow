@@ -25,7 +25,10 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     feats = pd.DataFrame(index=df.index)
     feats["ofi_zscore"]  = rolling_ofi_zscore(df)
     feats["amihud"]      = amihud_ratio(df)
-    feats["kyle_lambda"] = kyle_lambda(df)
+    _kl = kyle_lambda(df)
+    _mu = _kl.rolling(100, min_periods=10).mean()
+    _sg = _kl.rolling(100, min_periods=10).std().clip(lower=1e-10)
+    feats["kyle_lambda"] = ((_kl - _mu) / _sg).clip(-6, 6)
     feats["cs_spread"]   = corwin_schultz_spread(df)
     feats["tick_sign"]   = tick_sign(df["close"])
     feats["ret_1"]       = df["close"].pct_change(1)
@@ -87,17 +90,17 @@ def walk_forward_train(df: pd.DataFrame,
     }
 
 
-# ─── Phase 2 additive addition ─────────────────────────────────────────────────
+# ─── Hourly additive addition ─────────────────────────────────────────────────
 
 def build_intraday_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Phase 2 feature matrix — wraps intraday_engine.build_intraday_feature_matrix().
+    Hourly feature matrix — wraps intraday_engine.build_intraday_feature_matrix().
 
     This function exists so callers that already import from lightgbm_trainer
-    can access Phase 2 features without changing their import paths.
+    can access hourly features without changing their import paths.
     The implementation lives in intraday_engine.py to keep concerns separated.
 
-    Phase 1 build_features() and walk_forward_train() are UNCHANGED above.
+    Daily build_features() and walk_forward_train() are UNCHANGED above.
     """
     from alpha_flow.analysis.intraday_engine import build_intraday_feature_matrix
     return build_intraday_feature_matrix(df)

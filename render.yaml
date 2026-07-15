@@ -1,0 +1,57 @@
+## render.yaml — AlphaFlow Render.com deployment configuration
+# Deploy: connect this repo to Render, it picks this file automatically.
+# Docs: https://render.com/docs/infrastructure-as-code
+#
+# Services:
+#   alphaflow-backend  — FastAPI (Python), port $PORT (Render sets this)
+#   alphaflow-frontend — React (Vite static site)
+#
+# Database: Neon Postgres free tier (set DATABASE_URL in Render Dashboard).
+# Scheduling: GitHub Actions cron (not APScheduler — Render free tier sleeps).
+
+services:
+  # ── Backend (FastAPI) ───────────────────────────────────────────────────────
+  - type: web
+    name: alphaflow-backend
+    runtime: python
+    plan: free                        # Render free tier (spins down after 15 min idle)
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    rootDir: .                        # AlphaFlow/ is the repo root
+    envVars:
+      # ── Scheduler ────────────────────────────────────────────────────────────
+      - key: SCHEDULER_ENABLED
+        value: "false"                # GitHub Actions handles scheduling in prod
+      # ── Database ─────────────────────────────────────────────────────────────
+      - key: DATABASE_URL
+        sync: false                   # Neon Postgres pooler URL (set in Dashboard)
+      # ── Data cache (parquet/CSV, reproducible — lost on redeploy is OK) ─────
+      - key: DATA_DIR
+        value: /tmp/alphaflow-data
+      # ── Sensitive keys (set in Render Dashboard → Environment) ───────────────
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_API_KEY_2
+        sync: false
+      - key: ALPACA_API_KEY
+        sync: false
+      - key: ALPACA_SECRET_KEY
+        sync: false
+      - key: ALPACA_BASE_URL
+        value: https://paper-api.alpaca.markets/v2
+
+  # ── Frontend (React / Vite static site) ─────────────────────────────────────
+  - type: web
+    name: alphaflow-frontend
+    runtime: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    rootDir: frontend
+    envVars:
+      # ── Backend URL (set to your Render backend URL after first deploy) ─────
+      - key: VITE_API_URL
+        value: https://alphaflow-backend.onrender.com  # UPDATE this after backend is deployed
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html      # SPA fallback — all routes served by index.html

@@ -1,5 +1,5 @@
 """
-analysis/figures.py — Chart generation for AlphaFlow (P2 Microstructure Alpha).
+analysis/figures.py — Chart generation for AlphaFlow (Microstructure Alpha Engine).
 
 Charts
 ------
@@ -172,8 +172,8 @@ def plot_alpha_decay(ic_by_lag: dict) -> Path:
     if not lags or all(v == 0.0 for v in ics):
         ax.text(0.5, 0.5,
                 "Insufficient data for alpha decay estimation\n"
-                "(Phase 1: daily OHLCV OFI proxy — IC near zero is expected)\n"
-                "Phase 2 with real tick data will show meaningful IC > 0.05",
+                "(Daily: daily OHLCV OFI proxy — IC near zero is expected)\n"
+                "With real tick data, hourly will show meaningful IC > 0.05",
                 transform=ax.transAxes, ha="center", va="center", color=_AXIS,
                 fontsize=9, multialignment="center", linespacing=1.8)
         ax.axhline( 0.05, color=_AMBER, lw=1.1, ls="--", label="±0.05 significance threshold", zorder=2)
@@ -211,7 +211,7 @@ def save_microstructure_report(
     ts = date.today().strftime("%Y%m%d")
     report = {
         "generated_at": date.today().isoformat(),
-        "project": "AlphaFlow (P2) — Microstructure Alpha Engine",
+        "project": "AlphaFlow — Microstructure Alpha Engine",
         "metrics": {
             "avg_effective_spread_bps": {
                 "value": round(eff_spread_mean, 2),

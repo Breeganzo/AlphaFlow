@@ -2,6 +2,17 @@
 # All functions are pure closed-form mathematical computations on return series.
 # No learned parameters, no external APIs, no randomness.
 # Used as a shared dependency by all 7 projects.
+#
+# NOTE (AlphaFlow-specific): within THIS project, this module is the dedicated
+# metrics library for the standalone CLI backtest path only — imported by
+# alpha_flow/analysis/backtest.py, which is invoked from run.py's CLI backtest
+# mode (`run_backtest`/`compute_alpha_decay`). It is intentionally separate
+# from alpha_flow/analysis/performance.py, which is what the live FastAPI
+# walk-forward pipeline/tests actually use. The two modules have only ~5
+# overlapping function names (sortino_ratio, calmar_ratio, omega_ratio,
+# information_coefficient, binary_auc) — this is NOT dead/duplicate code, and
+# the two should not be merged (no test exercises run.py's backtest mode
+# directly, so merging risks silently changing untested CLI-only behavior).
 """
 shared/performance_metrics.py
 15+ standardised performance metrics shared across all 7 quant projects.

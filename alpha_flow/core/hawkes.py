@@ -1,6 +1,6 @@
 """
 core/hawkes.py
-Phase 2: Hawkes process intensity for self-exciting order flow.
+Hourly: Hawkes process intensity for self-exciting order flow.
 
 A Hawkes process models events that trigger more events — like earthquakes
 triggering aftershocks. In finance: a large buy order triggers momentum chasers,
@@ -120,6 +120,45 @@ def estimate_hawkes_params(
 
     # Fallback: initial guesses (MLE failed — documented gracefully)
     return {"mu": mu_init * scale, "alpha": alpha_init, "beta": beta_init}
+
+
+def hawkes_branching_ratio(intensity_series: pd.Series) -> dict[str, float]:
+    """
+    Branching ratio η = α/β — the single most interpretable output of a Hawkes fit.
+
+    η is the expected number of follow-on ("child") events triggered directly by
+    each event. It governs how self-exciting the order flow is:
+
+        η → 0    memoryless flow — events are independent (Poisson-like), no herding
+        0 < η<1  stationary self-excitation — bursts fade; the process is stable
+        η → 1    NEAR-CRITICAL — each order triggers ≈1 more; endogenous, reflexive
+                 activity dominates (feedback loops, flash-crash-prone regimes)
+        η ≥ 1    non-stationary — intensity explodes (the fit constrains α<β to avoid)
+
+    Empirically, mature electronic markets sit at η ≈ 0.7–0.95 (Hardiman,
+    Bercot & Bouchaud 2013) — order flow is overwhelmingly endogenous. Reporting
+    η turns the raw (μ, α, β) fit into a regime diagnostic a desk can act on.
+
+    Returns dict: {'mu', 'alpha', 'beta', 'branching_ratio', 'regime'}.
+    """
+    params = estimate_hawkes_params(intensity_series)
+    alpha, beta = params["alpha"], params["beta"]
+    eta = float(alpha / beta) if beta > 1e-12 else float("nan")
+    # The MLE constrains α < β for stationarity, so a CONVERGED fit always gives
+    # η < 1. An η ≥ 1 therefore means the optimiser fell back to its initial
+    # guess (did not converge) — we report that honestly rather than claiming a
+    # genuine "explosive" regime, which this proxy data can't actually evidence.
+    if not np.isfinite(eta):
+        regime = "undefined"
+    elif eta >= 1.0:
+        regime = "inconclusive (MLE did not converge)"
+    elif eta < 0.3:
+        regime = "near-Poisson (independent flow)"
+    elif eta < 0.7:
+        regime = "moderately self-exciting"
+    else:
+        regime = "near-critical (reflexive)"
+    return {**params, "branching_ratio": round(eta, 4), "regime": regime}
 
 
 # ─── Intensity computation ────────────────────────────────────────────────────

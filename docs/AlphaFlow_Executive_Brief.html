@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AlphaFlow — Executive Technical Brief</title>
+<style>
+  @page {
+    size: A4;
+    margin: 18mm 20mm 20mm 20mm;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.55;
+    color: #1a1a2e;
+    background: #fff;
+    padding: 40px 54px;
+  }
+  @media print {
+    body { padding: 0; }
+  }
+
+  /* ── Header ─────────────────────────────────────────────── */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 3px solid #0f3460;
+    padding-bottom: 14px;
+    margin-bottom: 22px;
+  }
+  .header-left h1 {
+    font-size: 22pt;
+    font-weight: 700;
+    color: #0f3460;
+    letter-spacing: -0.5px;
+  }
+  .header-left .subtitle {
+    font-size: 11pt;
+    color: #4a5568;
+    margin-top: 2px;
+  }
+  .header-right {
+    text-align: right;
+    font-size: 9pt;
+    color: #4a5568;
+    line-height: 1.6;
+  }
+  .header-right .label { font-weight: 600; color: #1a1a2e; }
+
+  /* ── Sections ───────────────────────────────────────────── */
+  h2 {
+    font-size: 13pt;
+    font-weight: 700;
+    color: #0f3460;
+    margin: 22px 0 8px 0;
+    padding-bottom: 4px;
+    border-bottom: 1.5px solid #e2e8f0;
+  }
+  h3 {
+    font-size: 11pt;
+    font-weight: 600;
+    color: #2d3748;
+    margin: 14px 0 6px 0;
+  }
+  p, li { margin-bottom: 5px; }
+  ul { padding-left: 20px; }
+  li { padding-left: 2px; }
+
+  /* ── Highlight box ──────────────────────────────────────── */
+  .highlight {
+    background: #edf2f7;
+    border-left: 4px solid #0f3460;
+    padding: 12px 16px;
+    margin: 12px 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .highlight p { margin-bottom: 3px; }
+  .highlight strong { color: #0f3460; }
+
+  /* ── Tables ─────────────────────────────────────────────── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 14px 0;
+    font-size: 9.5pt;
+  }
+  th {
+    background: #0f3460;
+    color: #fff;
+    font-weight: 600;
+    text-align: left;
+    padding: 7px 10px;
+  }
+  td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  tr:nth-child(even) td { background: #f7fafc; }
+
+  /* ── Two-col layout ─────────────────────────────────────── */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    margin: 10px 0;
+  }
+  .col-card {
+    background: #f7fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+  .col-card h3 { margin-top: 0; }
+
+  /* ── Stats bar ──────────────────────────────────────────── */
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    margin: 14px 0;
+  }
+  .stat {
+    text-align: center;
+    background: #0f3460;
+    color: #fff;
+    border-radius: 6px;
+    padding: 10px 6px;
+  }
+  .stat .num {
+    font-size: 18pt;
+    font-weight: 700;
+    display: block;
+  }
+  .stat .lbl {
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 0.85;
+  }
+
+  /* ── Footer ─────────────────────────────────────────────── */
+  .footer {
+    margin-top: 30px;
+    padding-top: 10px;
+    border-top: 1.5px solid #e2e8f0;
+    font-size: 8.5pt;
+    color: #718096;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  /* ── Page break hints ───────────────────────────────────── */
+  .page-break { page-break-before: always; }
+  h2, h3 { page-break-after: avoid; }
+  table, .highlight, .stats-bar { page-break-inside: avoid; }
+
+  /* ── Architecture diagram ───────────────────────────────── */
+  .arch-box {
+    background: #1a1a2e;
+    color: #a0aec0;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 8.5pt;
+    line-height: 1.5;
+    padding: 14px 18px;
+    border-radius: 6px;
+    margin: 10px 0;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .arch-box .hl { color: #63b3ed; font-weight: 600; }
+  .arch-box .gr { color: #68d391; }
+  .arch-box .yl { color: #f6e05e; }
+  .arch-box .pk { color: #fc8181; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════ HEADER ═══════════════════════════ -->
+<div class="header">
+  <div class="header-left">
+    <h1>AlphaFlow</h1>
+    <div class="subtitle">Market Microstructure Alpha Research Engine</div>
+  </div>
+  <div class="header-right">
+    <span class="label">Author:</span> Anthony Breeganzo Thomas<br>
+    <span class="label">Project:</span> AlphaFlow<br>
+    <span class="label">Date:</span> July 2026<br>
+    <span class="label">Classification:</span> Internal / Client-Facing
+  </div>
+</div>
+
+<!-- ═══════════════════════════ EXECUTIVE SUMMARY ═══════════════ -->
+<h2>1. Executive Summary</h2>
+<p>
+  AlphaFlow is a <strong>production-grade quantitative research system</strong> that extracts
+  trading signals from market microstructure data, validates them with machine learning, and
+  presents results through a real-time dashboard. It demonstrates the capability to
+  deliver <strong>AI-powered financial analytics</strong> for capital markets &mdash;
+  from raw market data to actionable insight, with full auditability.
+</p>
+
+<div class="highlight">
+  <p><strong>What makes this different:</strong> The trading signal is 100% deterministic and auditable.
+  The AI (LLM) writes explanations only &mdash; it never decides a trade. This separation is a
+  regulatory and compliance requirement that most competing solutions fail to enforce.</p>
+</div>
+
+<div class="stats-bar">
+  <div class="stat"><span class="num">50</span><span class="lbl">Equities Tracked</span></div>
+  <div class="stat"><span class="num">13</span><span class="lbl">ML Features</span></div>
+  <div class="stat"><span class="num">111</span><span class="lbl">Automated Tests</span></div>
+  <div class="stat"><span class="num">8</span><span class="lbl">Microstructure Signals</span></div>
+  <div class="stat"><span class="num">$0</span><span class="lbl">Infrastructure Cost</span></div>
+</div>
+
+<!-- ═══════════════════════════ WHAT WE BUILT ═══════════════════ -->
+<h2>2. What We Built</h2>
+
+<h3>2.1 End-to-End Quantitative Research Pipeline</h3>
+<p>
+  AlphaFlow processes market data at two resolutions (daily and hourly), computes
+  microstructure signals grounded in peer-reviewed academic research, trains ML models
+  with leak-free validation, and delivers results through a real-time web dashboard.
+</p>
+
+<table>
+  <tr><th>Component</th><th>Technology</th><th>Purpose</th></tr>
+  <tr><td>Signal Engine</td><td>Python (NumPy, Pandas)</td><td>8 microstructure signals from academic literature (OFI, Kyle's &lambda;, Amihud, VPIN, etc.)</td></tr>
+  <tr><td>ML Predictor</td><td>LightGBM (Gradient Boosted Trees)</td><td>Walk-forward prediction with 13 features, embargo/purge to prevent data leakage</td></tr>
+  <tr><td>Explainability</td><td>SHAP (TreeExplainer)</td><td>Per-prediction feature attribution &mdash; explains WHY each signal fired</td></tr>
+  <tr><td>Statistical Validation</td><td>Benjamini-Hochberg FDR</td><td>Multiple-testing correction across 50 simultaneous hypothesis tests</td></tr>
+  <tr><td>AI Narrative</td><td>Groq LLM (Llama 3.3 70B)</td><td>Natural language explanations of signals, grounded in live computed numbers</td></tr>
+  <tr><td>Backend API</td><td>FastAPI + SQLite</td><td>REST + SSE endpoints, scheduled pipelines, paper-trade execution</td></tr>
+  <tr><td>Dashboard</td><td>React 18 / TypeScript / Recharts</td><td>Real-time charts, signal tables, portfolio simulation, dark/light themes</td></tr>
+  <tr><td>Execution</td><td>Alpaca Markets API</td><td>Paper trading with PnL tracking and order audit trail</td></tr>
+  <tr><td>Deployment</td><td>Render.com + GitHub CI</td><td>One-command deploy, 111 automated tests, TypeScript strict mode</td></tr>
+</table>
+
+<h3>2.2 AI / Rules / ML Boundary (the key differentiator)</h3>
+<p>Financial regulators (MiFID II, SEC) require that automated trading decisions be auditable.
+  AlphaFlow enforces a strict three-layer separation:</p>
+
+<div class="two-col">
+  <div class="col-card">
+    <h3>Deterministic (Auditable)</h3>
+    <ul>
+      <li><strong>Rules layer:</strong> All microstructure math &mdash; OFI, Kyle's &lambda;, Amihud, spreads. Pure functions with unit tests against hand-computed reference values.</li>
+      <li><strong>ML layer:</strong> LightGBM walk-forward regressor. Deterministic given the same data. SHAP explains every prediction.</li>
+      <li><strong>Signal classification:</strong> Two-tier cross-sectional rank + FDR correction. No randomness, no LLM involvement.</li>
+    </ul>
+  </div>
+  <div class="col-card">
+    <h3>AI (Narrative Only)</h3>
+    <ul>
+      <li>Groq LLM at exactly 3 call sites</li>
+      <li>Receives computed numbers as context</li>
+      <li>Generates English explanations of signals</li>
+      <li>Temperature &le;0.2, grounded in live DB values</li>
+      <li><strong>Never decides BUY/SELL/HOLD</strong></li>
+      <li>Can be removed without changing any signal</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ═══════════════════════════ PAGE 2 ══════════════════════════ -->
+<div class="page-break"></div>
+
+<h2>3. Architecture</h2>
+
+<div class="arch-box"><span class="hl">React 18 Dashboard</span> (Vite + TypeScript)
+  &boxur;&boxh; Daily view: signal cards, sector heatmap, microstructure charts
+  &boxur;&boxh; Hourly view: 8 chart tabs, SHAP attribution, portfolio simulation
+  &boxur;&boxh; Paper trading: live P&amp;L, order book, execution quality
+  &boxur;&boxh; AI chat: LLM explains signals in plain English
+             &boxv;
+             &boxv; REST + SSE (Server-Sent Events for live streaming)
+             &boxv;
+<span class="hl">FastAPI Backend</span> (Python 3.11)
+  &boxur;&boxh; <span class="gr">/api/run</span>             &rarr; Daily microstructure pipeline
+  &boxur;&boxh; <span class="gr">/api/intraday/run</span>    &rarr; Hourly LightGBM walk-forward
+  &boxur;&boxh; <span class="gr">/api/chat</span>            &rarr; Groq LLM (narrative only)
+  &boxur;&boxh; <span class="gr">/api/paper-trade/*</span>   &rarr; Alpaca paper execution
+  &boxur;&boxh; <span class="yl">APScheduler</span>         &rarr; Automated daily + hourly cron
+             &boxv;
+<span class="hl">Shared Core</span> (alpha_flow/)
+  &boxur;&boxh; <span class="pk">core/</span>     8 microstructure estimators (pure functions, tested)
+  &boxur;&boxh; <span class="pk">analysis/</span> Walk-forward ML, signal classification, portfolio engine
+  &boxur;&boxh; <span class="pk">data/</span>     Alpaca IEX + yfinance feeds, DuckDB/Parquet cache
+  &boxur;&boxh; <span class="pk">agent/</span>    LangGraph orchestration, Groq narrative</div>
+
+<h2>4. Why We Built This</h2>
+
+<div class="two-col">
+  <div class="col-card">
+    <h3>For the Scholarship Application</h3>
+    <ul>
+      <li>Demonstrates fluency in market microstructure theory (Chordia, Kyle, Amihud, Easley-Lopez de Prado)</li>
+      <li>Shows production engineering capability (111 tests, CI/CD, deploy)</li>
+      <li>Proves statistical rigor (walk-forward, BH-FDR, honest reporting of limitations)</li>
+      <li>Establishes the right AI boundary (LLM never trades)</li>
+      <li>Target: Imperial College MSc Mathematics &amp; Finance / JPMorgan Quantitative Finance Scholarship</li>
+    </ul>
+  </div>
+  <div class="col-card">
+    <h3>For Industry Applications</h3>
+    <ul>
+      <li><strong>Proof of capability:</strong> We can deliver end-to-end quant analytics, from data ingestion to production dashboard</li>
+      <li><strong>Regulatory-ready:</strong> Deterministic signals + auditable AI boundary satisfies MiFID II / SEC requirements</li>
+      <li><strong>Extensible:</strong> Same architecture applies to any asset class (FX, commodities, crypto, fixed income)</li>
+      <li><strong>Cost-effective:</strong> Runs on $0/month infrastructure; scales with paid data feeds</li>
+      <li><strong>Modern stack:</strong> FastAPI + React + LightGBM + LLM &mdash; the stack investment banks are adopting</li>
+    </ul>
+  </div>
+</div>
+
+<h2>5. Technology Stack &amp; Algorithms</h2>
+
+<table>
+  <tr><th>Category</th><th>Technology</th><th>Why This Choice</th></tr>
+  <tr><td>Machine Learning</td><td>LightGBM (Gradient Boosted Trees)</td><td>Industry standard for tabular financial data &mdash; outperforms deep learning on structured features, interpretable via SHAP, trains in seconds</td></tr>
+  <tr><td>Explainability (XAI)</td><td>SHAP TreeExplainer</td><td>Per-prediction feature attribution. Regulatory requirement for model explainability (SR 11-7, MiFID II)</td></tr>
+  <tr><td>LLM / Gen AI</td><td>Groq (Llama 3.3 70B)</td><td>Fastest inference for narrative generation. Confined to explanation &mdash; never in the signal path</td></tr>
+  <tr><td>Statistical Testing</td><td>Benjamini-Hochberg FDR</td><td>Controls false discovery rate across 50 simultaneous tests. Standard in genomics and quant finance</td></tr>
+  <tr><td>Data Pipeline</td><td>Alpaca IEX + yfinance + DuckDB</td><td>Free tier for research; upgrade path to SIP ($200/mo) or tick data ($100&ndash;300/mo)</td></tr>
+  <tr><td>Orchestration</td><td>LangGraph (daily) + APScheduler</td><td>Graph-based pipeline with checkpointing; cron for unattended runs</td></tr>
+  <tr><td>Backend</td><td>FastAPI + SQLite</td><td>Async Python, auto-generated OpenAPI docs, zero-config persistence</td></tr>
+  <tr><td>Frontend</td><td>React 18 + TypeScript + Recharts</td><td>Type-safe, component-based, professional charting</td></tr>
+</table>
+
+<!-- ═══════════════════════════ PAGE 3 ══════════════════════════ -->
+<div class="page-break"></div>
+
+<h2>6. Microstructure Signals (Academic Foundation)</h2>
+<p>Every signal is grounded in a peer-reviewed paper. This is not black-box ML &mdash; each feature has an economic theory behind it.</p>
+
+<table>
+  <tr><th>Signal</th><th>What It Measures</th><th>Academic Reference</th></tr>
+  <tr><td>Order Flow Imbalance (OFI)</td><td>Net buying/selling pressure</td><td>Chordia, Roll &amp; Subrahmanyam (2002)</td></tr>
+  <tr><td>Kyle's Lambda (&lambda;)</td><td>Price impact per unit of order flow</td><td>Kyle (1985)</td></tr>
+  <tr><td>Amihud ILLIQ</td><td>Illiquidity (return per dollar volume)</td><td>Amihud (2002)</td></tr>
+  <tr><td>Corwin-Schultz Spread</td><td>Effective bid-ask spread from high/low</td><td>Corwin &amp; Schultz (2012)</td></tr>
+  <tr><td>VPIN</td><td>Probability of informed trading (flow toxicity)</td><td>Easley, L&oacute;pez de Prado &amp; O'Hara (2012)</td></tr>
+  <tr><td>Hawkes Intensity</td><td>Self-exciting order arrival rate</td><td>Bacry, Mastromatteo &amp; Muzy (2015)</td></tr>
+  <tr><td>VWAP Deviation</td><td>Distance from volume-weighted average price</td><td>Almgren &amp; Chriss (2001)</td></tr>
+  <tr><td>Volume Clock Imbalance</td><td>Signed volume asymmetry per bar</td><td>L&oacute;pez de Prado (2018)</td></tr>
+</table>
+
+<h2>7. Results &amp; Honest Assessment</h2>
+
+<div class="highlight">
+  <p><strong>We report real numbers, not inflated ones.</strong> The cross-sectional average |IC| is ~1.4%
+  and 0 of 50 tickers survive multiple-testing correction. This is the expected ceiling for free
+  OHLCV data without tick-level trade classification. We present this openly because
+  <strong>honesty about limitations is a credibility asset</strong>, not a weakness.</p>
+</div>
+
+<table>
+  <tr><th>Metric</th><th>Value</th><th>Interpretation</th></tr>
+  <tr><td>Cross-Sectional |IC|</td><td>~1.4% (median 1.1%, max 5.2%)</td><td>Below 5% strong-signal threshold; expected for OHLCV proxy</td></tr>
+  <tr><td>Gross Sharpe</td><td>~0.42</td><td>Average across walk-forward folds</td></tr>
+  <tr><td>Net Sharpe</td><td>Reported per-name</td><td>After Corwin-Schultz transaction costs</td></tr>
+  <tr><td>Walk-Forward Folds</td><td>20&ndash;27 per ticker</td><td>Monthly folds with embargo (no data leakage)</td></tr>
+  <tr><td>BH-FDR Survivors</td><td>0 of 50</td><td>Honest: no single name is individually significant on free data</td></tr>
+  <tr><td>Signal Distribution</td><td>10 Long / 10 Short / 30 Hold</td><td>Quintile sort (Fama-French 1993 standard)</td></tr>
+</table>
+
+<h3>7.1 Why the IC is Low (and What Fixes It)</h3>
+<p>
+  The limitation is <strong>data resolution, not methodology</strong>. Our OFI proxy classifies each
+  entire hourly bar's volume as buy or sell based on close vs. open. Real OFI (Chordia et al. 2002)
+  classifies each individual trade using Lee-Ready tick rules. With tick-level data (~$200/month),
+  the same pipeline architecture would target IC 4&ndash;8%.
+</p>
+
+<h2>8. Upgrade Roadmap</h2>
+
+<table>
+  <tr><th>Phase</th><th>Monthly Cost</th><th>Expected IC</th><th>Key Unlock</th></tr>
+  <tr><td><strong>1&ndash;3 (Current)</strong></td><td>$0</td><td>~1.4%</td><td>Methodology proof on free data</td></tr>
+  <tr><td>4: SIP Full-Market Bars</td><td>~$200</td><td>~2&ndash;3%</td><td>100% US market volume (vs 2&ndash;5% IEX)</td></tr>
+  <tr><td>5: Tick Data + Real OFI</td><td>~$100&ndash;300</td><td>~4&ndash;8%</td><td>Trade-by-trade Lee-Ready classification</td></tr>
+  <tr><td>6: Advanced Portfolio</td><td>$0</td><td>Same IC, better risk</td><td>Risk-parity, Kelly sizing, Almgren-Chriss</td></tr>
+  <tr><td>7: Deep Learning + Alt Data</td><td>$50&ndash;500</td><td>TBD</td><td>Temporal Fusion Transformer, FinBERT, options IV</td></tr>
+</table>
+
+<!-- ═══════════════════════════ PAGE 4 ══════════════════════════ -->
+<div class="page-break"></div>
+
+<h2>9. Industry Applications</h2>
+
+<h3>9.1 What This Proves We Can Deliver</h3>
+<div class="two-col">
+  <div class="col-card">
+    <h3>Quantitative Analytics</h3>
+    <ul>
+      <li>Signal research from raw market data to production dashboard</li>
+      <li>ML model development with proper validation (walk-forward, embargo)</li>
+      <li>Statistical rigor (FDR, IC framework, net-of-cost reporting)</li>
+      <li>Explainable AI (SHAP attribution for every prediction)</li>
+    </ul>
+  </div>
+  <div class="col-card">
+    <h3>Production Engineering</h3>
+    <ul>
+      <li>Full-stack development (FastAPI + React + TypeScript)</li>
+      <li>111 automated tests, CI/CD pipeline, one-command deploy</li>
+      <li>Real-time data streaming (SSE), scheduled pipelines</li>
+      <li>Regulatory-compliant AI boundary (auditable LLM)</li>
+    </ul>
+  </div>
+</div>
+
+<h3>9.2 Target Client Verticals</h3>
+<table>
+  <tr><th>Client Type</th><th>What We'd Build</th><th>Revenue Model</th></tr>
+  <tr><td>Asset Managers / Hedge Funds</td><td>Custom alpha research pipelines with walk-forward validation and SHAP attribution</td><td>Consulting + managed service</td></tr>
+  <tr><td>Investment Banks (Trading Desks)</td><td>Real-time microstructure analytics dashboard, execution quality monitoring</td><td>Platform license + support</td></tr>
+  <tr><td>Wealth Management / RIAs</td><td>Portfolio analytics with LLM-generated client reports grounded in quantitative data</td><td>SaaS subscription</td></tr>
+  <tr><td>Compliance / Risk Teams</td><td>Auditable AI systems where rules decide and LLMs explain &mdash; MiFID II / SEC compliant</td><td>Consulting + audit tooling</td></tr>
+  <tr><td>Corporate Treasury</td><td>FX/commodity microstructure signals for hedging timing optimisation</td><td>Consulting engagement</td></tr>
+</table>
+
+<h3>9.3 Competitive Differentiators</h3>
+<ul>
+  <li><strong>Auditable AI:</strong> Unlike black-box solutions, our LLM is provably out of the signal path. This is a regulatory selling point that competitors cannot match without rebuilding.</li>
+  <li><strong>Academic rigour:</strong> Every signal traces to a peer-reviewed paper. Every metric includes standard errors. Every backtest uses walk-forward (not in-sample).</li>
+  <li><strong>Cost-effective proof-of-concept:</strong> Built on $0/month infrastructure. Client engagements scale with paid data, not platform fees.</li>
+  <li><strong>Full-stack delivery:</strong> Not just a model &mdash; a complete system from data ingestion to user-facing dashboard, deployable in days.</li>
+</ul>
+
+<h2>10. Summary</h2>
+
+<div class="highlight">
+  <p><strong>AlphaFlow demonstrates production-grade quantitative
+  analytics with responsible AI practices.</strong> The system processes real market data,
+  applies peer-reviewed microstructure theory, validates with rigorous statistics, and
+  presents results through a professional dashboard &mdash; all while maintaining a strict,
+  auditable boundary between deterministic signals and AI-generated narrative.</p>
+  <p style="margin-top:8px;">The architecture is asset-class agnostic and ready for client engagements
+  in equities, FX, commodities, and fixed income.</p>
+</div>
+
+<div class="footer">
+  <div>AlphaFlow Executive Brief &mdash; July 2026</div>
+  <div>Anthony Breeganzo Thomas</div>
+</div>
+
+</body>
+</html>

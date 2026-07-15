@@ -1,0 +1,82 @@
+name: Scheduled Signals — AlphaFlow Market Pipelines
+
+# Replaces APScheduler (which dies when Render free tier sleeps).
+# Triggers the existing FastAPI endpoints via HTTP — zero code duplication.
+#
+# All times are UTC. ET = UTC−4 (EDT, Mar–Nov) / UTC−5 (EST, Nov–Mar).
+# These cron expressions use EDT offsets (summer). During EST, signals
+# fire ~1 hour early relative to market open — acceptable since signals
+# are computed on prior bar's close, not real-time.
+
+on:
+  workflow_dispatch: {}          # Manual trigger from Actions tab
+  schedule:
+    # ── Daily pipeline (9:35 AM ET = 1:35 PM UTC) ──────────────────────────
+    - cron: '35 13 * * 1-5'
+
+    # ── Hourly pipeline (10:35 AM – 4:35 PM ET = 2:35 PM – 8:35 PM UTC) ───
+    - cron: '35 14-20 * * 1-5'
+
+    # ── Position check every 10 min during market hours (9 AM – 4 PM ET) ───
+    - cron: '*/10 13-20 * * 1-5'
+
+    # ── Nightly data refresh (9:30 PM ET = 1:30 AM UTC next day) ───────────
+    - cron: '30 1 * * 2-6'
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine job type from schedule
+        id: job_type
+        run: |
+          CRON="${{ github.event.schedule }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "type=manual" >> "$GITHUB_OUTPUT"
+          elif [ "$CRON" = "35 13 * * 1-5" ]; then
+            echo "type=daily" >> "$GITHUB_OUTPUT"
+          elif [ "$CRON" = "30 1 * * 2-6" ]; then
+            echo "type=nightly" >> "$GITHUB_OUTPUT"
+          elif echo "$CRON" | grep -q '^\*/10'; then
+            echo "type=position_check" >> "$GITHUB_OUTPUT"
+          else
+            echo "type=hourly" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Wake backend (pre-ping /health)
+        run: |
+          echo "Waking Render backend..."
+          curl -sf "${{ secrets.RENDER_BACKEND_URL }}/health" --max-time 120 || true
+          echo "Waiting for cold start to complete..."
+          sleep 30
+
+      # ── Daily pipeline ────────────────────────────────────────────────────
+      - name: Trigger daily pipeline
+        if: steps.job_type.outputs.type == 'daily' || steps.job_type.outputs.type == 'manual'
+        run: |
+          echo "Triggering daily pipeline..."
+          curl -sf -X POST "${{ secrets.RENDER_BACKEND_URL }}/api/run" --max-time 300 || echo "Daily pipeline trigger returned non-zero (may already be running)"
+
+      # ── Hourly pipeline ───────────────────────────────────────────────────
+      - name: Trigger hourly pipeline
+        if: steps.job_type.outputs.type == 'hourly' || steps.job_type.outputs.type == 'manual'
+        run: |
+          echo "Triggering hourly intraday pipeline..."
+          curl -sf -X POST "${{ secrets.RENDER_BACKEND_URL }}/api/intraday/run" \
+            -H "Content-Type: application/json" \
+            -d '{"resolution": "1h"}' \
+            --max-time 300 || echo "Hourly pipeline trigger returned non-zero (may already be running)"
+
+      # ── Position check ────────────────────────────────────────────────────
+      - name: Check open positions
+        if: steps.job_type.outputs.type == 'position_check' || steps.job_type.outputs.type == 'manual'
+        run: |
+          echo "Running position exit check..."
+          curl -sf -X POST "${{ secrets.RENDER_BACKEND_URL }}/api/positions/check" --max-time 120 || echo "Position check returned non-zero"
+
+      # ── Nightly data refresh ──────────────────────────────────────────────
+      - name: Refresh daily OHLCV data
+        if: steps.job_type.outputs.type == 'nightly' || steps.job_type.outputs.type == 'manual'
+        run: |
+          echo "Triggering nightly data refresh..."
+          curl -sf -X POST "${{ secrets.RENDER_BACKEND_URL }}/api/data/refresh" --max-time 600 || echo "Data refresh returned non-zero"

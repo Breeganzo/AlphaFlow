@@ -2,6 +2,18 @@
 agents/signal_agent.py
 Groq LLM agent — interprets microstructure signals per ticker with unique, data-grounded reasoning.
 Uses primary GROQ_API_KEY with automatic fallback to GROQ_API_KEY_2.
+
+SIGNAL-PRODUCER vs SIGNAL-EXPLAINER CONTRACT (do not violate):
+  - The BUY/SELL/HOLD decision is ALWAYS computed deterministically upstream via
+    the shared cross-sectional classifier (candidacy → Benjamini-Hochberg FDR gate):
+    `_determine_signals_crosssectional` in alpha_flow/agent/langgraph_flow.py (daily)
+    and `_build_intraday_cards` in backend/main.py (hourly), both calling
+    `alpha_flow/analysis/signal_classification.py`.
+  - This module (the LLM) NEVER decides the signal. `interpret_microstructure()` reads
+    `state["signal"]` as a fixed input and only generates the one-sentence natural-
+    language justification (`llm_reason`). An LLM must never be the sole source of a
+    trading decision — non-deterministic, unauditable output has no place in the
+    signal-generation path of a production quant system.
 """
 import os
 from pathlib import Path
@@ -24,13 +36,12 @@ TICKER_INFO: dict[str, str] = {
     "JPM":   "JPMorgan Chase — Universal bank; earnings driven by net interest margin (rate-sensitive)",
     "BAC":   "Bank of America — Consumer & commercial banking; highest rate-sensitivity of major US banks",
     "V":     "Visa Inc. — Global payment network; fee-based model, near-zero credit risk, high FCF margins",
-    "GS":    "The Goldman Sachs Group — Investment banking & asset mgmt; revenue tied to M&A activity and market volatility",
 }
 
 # Historical typical Corwin-Schultz spreads for each ticker (bps) — for anomaly detection
 TYPICAL_SPREAD_BPS: dict[str, float] = {
     "AAPL": 7.0, "MSFT": 7.0, "NVDA": 12.0, "META": 9.0, "GOOGL": 8.0,
-    "AMZN": 9.0, "TSLA": 15.0, "JPM": 6.0, "BAC": 5.5, "V": 5.5, "GS": 8.0,
+    "AMZN": 9.0, "TSLA": 15.0, "JPM": 6.0, "BAC": 5.5, "V": 5.5,
 }
 
 
@@ -79,12 +90,12 @@ def interpret_microstructure(state: dict) -> dict:
     state keys: ticker, ofi_zscore, amihud, kyle_lambda, cs_spread, tick_sign, ic_value
     """
     ticker     = state.get("ticker", "UNKNOWN")
-    ofi_z      = state.get("ofi_zscore", 0.0)
-    amihud_val = state.get("amihud", 0.0)
-    kyle_val   = state.get("kyle_lambda", 0.0)
-    spread_bps = state.get("cs_spread", 0.0) * 10_000
-    tick       = state.get("tick_sign", 0)
-    ic_val     = state.get("ic_value", 0.0)
+    ofi_z      = float(state.get("ofi_zscore") or 0.0)
+    amihud_val = float(state.get("amihud") or 0.0)
+    kyle_val   = float(state.get("kyle_lambda") or 0.0)
+    spread_bps = float(state.get("cs_spread") or 0.0) * 10_000
+    tick       = int(state.get("tick_sign") or 0)
+    ic_val     = float(state.get("ic_value") or 0.0)
 
     typical_spread = TYPICAL_SPREAD_BPS.get(ticker, 10.0)
     spread_vs_typical = spread_bps / typical_spread if typical_spread > 0 else 1.0
@@ -149,7 +160,7 @@ Current microstructure readings:
   Amihud Illiquidity:   {amihud_val:.3e}  (liquid large-caps typical < 1e-7)
   Kyle Lambda:          {kyle_val:.3e}  (price impact per unit order flow)
   Last Tick Sign:       {tick:+d}        (+1 uptick / -1 downtick)
-  Walk-forward IC:      {ic_val:.4f}   (>0.05 = statistically significant; 0.0 = Phase-1 daily limit)
+  Walk-forward IC:      {ic_val:.4f}   (>0.05 = statistically significant; ~0.0 expected at OHLCV resolution)
 
 Most notable reading: {headline_focus}
 
@@ -159,15 +170,15 @@ Rules:
 3. Reference {sector_hint} or the most anomalous metric
 4. Max 25 words. Output EXACTLY one line: REASON: [sentence]"""
 
-    # Phase 2: add intraday context to the prompt when running in hourly mode
+    # Hourly: add intraday context to the prompt when running in hourly mode
     if state.get("resolution") == "hourly":
-        vwap_z    = state.get("vwap_zscore", 0.0)
-        hawkes_z  = state.get("hawkes_zscore", 0.0)
-        vol_z     = state.get("volume_zscore", 0.0)
-        shap_top  = state.get("shap_top_feature", "ofi_zscore")
+        vwap_z    = float(state.get("vwap_zscore") or 0.0)
+        hawkes_z  = float(state.get("hawkes_zscore") or 0.0)
+        vol_z     = float(state.get("volume_zscore") or 0.0)
+        shap_top  = state.get("shap_top_feature") or "ofi_zscore"
         prompt += f"""
 
-Phase 2 intraday signals (hourly resolution):
+Intraday signals (hourly resolution):
   VWAP Deviation Z:     {vwap_z:+.3f}  (<-1.5 = below VWAP → reversion buy; >+1.5 = above VWAP → reversion sell)
   Hawkes Intensity Z:   {hawkes_z:+.3f}  (>+2 = institutional activity burst detected)
   Volume Imbalance Z:   {vol_z:+.3f}  (>0 = net buying; <0 = net selling)

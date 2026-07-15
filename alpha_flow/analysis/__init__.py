@@ -1,9 +1,9 @@
 """alpha_flow.analysis — Walk-forward backtesting and intraday signal modelling.
 
 Modules:
-    intraday_engine     : Phase 2 — LGBMRegressor walk-forward on hourly bars,
+    intraday_engine     : Hourly — LGBMRegressor walk-forward on hourly bars,
                           SHAP attribution, Hawkes + VWAP + VolClock features.
-    backtest            : Phase 1 — Long-short portfolio simulation from daily signals.
+    backtest            : Daily — Long-short portfolio simulation from daily signals.
     performance         : Portfolio-level Sharpe, Sortino, Max Drawdown, IC.
     lightgbm_trainer    : Walk-forward LightGBM cross-validation wrapper.
     figures             : Matplotlib chart generation for the research report.

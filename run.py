@@ -1,17 +1,15 @@
 """
-run_agent.py — Project 2: Market Microstructure Alpha Engine
-Single entry point. Run with:
-    python3 alpha_flow/run_agent.py
+run.py — AlphaFlow · CLI entry point (development / debugging only)
 
-Executes:
-  1. LangGraph pipeline (data → features → LGBM → LLM → summary)
-  2. Full walk-forward backtest (IC table, AUC, hit rate, SHAP importance)
-  3. Microstructure signal card for current snapshot
+The production entry point is the FastAPI backend:
+    uvicorn backend.main:app --reload --port 8002
 
-Fallbacks:
-  - Groq API unavailable → LLM step skipped, raw model scores printed
-  - LightGBM not installed → rule-based signal used (OFI Z-score threshold)
-  - SHAP not installed → feature importance from LGBM .feature_importances_ used
+This script runs the pipeline offline (no browser needed):
+  1. LangGraph daily pipeline (data → features → LLM narrative → summary)
+  2. Walk-forward backtest    (IC table, AUC, hit rate, SHAP — CLI research tool)
+  3. Output chart generation
+
+Use case: quickly validate changes to core/ or analysis/ from the terminal.
 """
 import sys
 import traceback
@@ -26,8 +24,8 @@ for p in [str(ROOT), str(WORKSPACE)]:
 
 def run_langgraph_pipeline() -> None:
     print("\n" + "=" * 60)
-    print("  PROJECT 2 — MARKET MICROSTRUCTURE ENGINE")
-    print("  Step 1/3: LangGraph Pipeline")
+    print("  ALPHAFLOW — MARKET MICROSTRUCTURE ENGINE")
+    print("  Step 1/3: LangGraph daily pipeline")
     print("=" * 60)
     try:
         from alpha_flow.agent.langgraph_flow import build_graph
@@ -41,7 +39,7 @@ def run_langgraph_pipeline() -> None:
 
 def run_backtest_suite() -> None:
     print("\n" + "=" * 60)
-    print("  Step 2/3: Walk-Forward Backtest")
+    print("  Step 2/3: Walk-Forward Backtest (CLI research tool)")
     print("=" * 60)
     try:
         from alpha_flow.analysis.backtest import run_backtest
@@ -51,23 +49,9 @@ def run_backtest_suite() -> None:
         traceback.print_exc()
 
 
-def run_signal_card() -> None:
-    print("\n" + "=" * 60)
-    print("  Step 3/3: Current Microstructure Signal Card")
-    print("=" * 60)
-    try:
-        from alpha_flow.signals.signal_generator import (
-            generate_signal_card, print_signal_card,
-        )
-        card = generate_signal_card()
-        print_signal_card(card)
-    except Exception as exc:  # noqa: BLE001
-        print(f"  [WARN] Signal card error: {exc}")
-
-
 def run_figures() -> None:
     print("\n" + "=" * 60)
-    print("  Step 4/4: Generating Output Charts")
+    print("  Step 3/3: Generating Output Charts")
     print("=" * 60)
     try:
         import numpy as np
@@ -165,6 +149,5 @@ def run_figures() -> None:
 if __name__ == "__main__":
     run_langgraph_pipeline()
     run_backtest_suite()
-    run_signal_card()
     run_figures()
-    print("\n  Project 2 complete.\n")
+    print("\n  AlphaFlow CLI run complete.\n")

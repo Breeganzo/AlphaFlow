@@ -3,7 +3,7 @@
 Exposes 12+ endpoints across four groups:
     /api/pipeline/*   : Trigger pipeline runs, poll status, retrieve run history
     /api/signals/*    : Latest per-ticker signal cards, bulk aggregates
-    /api/intraday/*   : Phase 2 hourly walk-forward results, SHAP importance
+    /api/intraday/*   : hourly walk-forward results, SHAP importance
     /api/data/*       : Raw OHLCV CSV download, ticker management, SSE stream
 
 Server:  uvicorn backend.main:app --reload --port 8002

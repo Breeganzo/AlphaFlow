@@ -21,6 +21,10 @@ jobs:
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
+          # Python 3.11 — most stable for C extensions (SHAP, LightGBM, NumPy).
+          # Python 3.13 causes segfaults in SHAP TreeExplainer on Ubuntu CI
+          # due to changed C memory model (shap issue #3668). Upgrade when
+          # shap>=0.47 and lightgbm>=4.6 confirm 3.13 support.
           python-version: "3.11"
           cache: pip
 
@@ -50,10 +54,47 @@ jobs:
           import sys; sys.path.insert(0, '.')
           from backend.main import app; print('backend OK')
           from alpha_flow.config.settings import get_all_tickers, TICKERS
-          assert len(TICKERS) == 10, f'Expected 10 default tickers, got {len(TICKERS)}'
-          assert get_all_tickers() == list(TICKERS), 'get_all_tickers() mismatch with no custom file'
-          print('settings OK — 10 default tickers, get_all_tickers() works')
+          assert len(TICKERS) == 50, f'Expected 50 default tickers, got {len(TICKERS)}'
+          assert len(get_all_tickers()) >= len(TICKERS), 'get_all_tickers() must include the defaults'
+          print(f'settings OK — {len(TICKERS)} default tickers, get_all_tickers() works')
           "
+
+  # ─── Python: Tests against Postgres ────────────────────────────────────────
+  test-postgres:
+    name: Unit Tests (Postgres)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: alphaflow_test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run all tests (Postgres mode)
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/alphaflow_test
+        run: python -m pytest tests/ -v --tb=short --no-header
 
   # ─── React: Frontend build ─────────────────────────────────────────────────
   frontend-build:

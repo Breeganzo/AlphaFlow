@@ -1,7 +1,15 @@
 """
 core/ofi_calculator.py
-Order Flow Imbalance (OFI) — Chordia et al. (2002).
-Proxy for Level-1 data: use VWAP vs open as buyer/seller-initiated classification.
+Order Flow Imbalance (OFI) — bar-level proxy (Chordia et al. 2002).
+
+IMPORTANT: this is a BAR-LEVEL PROXY, not real OFI.
+Real OFI classifies each individual trade as buyer/seller-initiated using
+Lee-Ready tick rules on trade-by-trade data (TAQ / Polygon / Databento).
+This proxy classifies the ENTIRE bar's volume based on close vs open:
+  buy_vol  = volume when close >= open
+  sell_vol = volume when close <  open
+This loses within-bar directional information and caps IC at ~1-3%.
+See docs/ROADMAP.md Phase 5 for the tick-data upgrade path.
 """
 import numpy as np
 import pandas as pd

@@ -31,6 +31,17 @@ def kyle_lambda(df: pd.DataFrame, window: int = AMIHUD_WINDOW) -> pd.Series:
                 buy when close >= open (uptick bar), sell otherwise.
     Higher λ → larger price impact per unit of net order flow.
 
+    Numerical safeguard: when net order flow is degenerate within a window
+    (e.g. near-constant volume/direction → var(net_OFI) ≈ 0), naively dividing
+    by a fixed epsilon (the old `clip(lower=1e-12)` guard) can blow up λ to an
+    arbitrarily large, meaningless value (e.g. cov=1e-3, var=1e-12 → λ≈1e9)
+    rather than reflecting real price impact. Windows whose variance falls
+    below a data-driven floor — 1% of the ticker's own *trailing* median
+    variance (rolling, not whole-series, so this stays point-in-time and
+    introduces no look-ahead) — are excluded (NaN) instead of blown up.
+    Downstream consumers already `.dropna()` before averaging, so excluded
+    windows are simply skipped rather than corrupting the mean.
+
     Reference: Kyle, A.S. (1985). Continuous auctions and insider trading.
                Econometrica, 53(6), 1315–1335.
     """
@@ -39,8 +50,14 @@ def kyle_lambda(df: pd.DataFrame, window: int = AMIHUD_WINDOW) -> pd.Series:
     net_ofi = df["volume"] * (2 * is_buy - 1)                        # buy_vol - sell_vol
 
     # Vectorised rolling covariance — O(n) instead of the old O(n×window) loop.
-    # Handles Phase 2 intraday datasets (~3,276 hourly bars) without timeout.
+    # Handles hourly intraday datasets (~3,276 hourly bars) without timeout.
     roll_cov = dp.rolling(window).cov(net_ofi)           # cov(Δprice, net_OFI)
     roll_var = net_ofi.rolling(window).var(ddof=1)        # var(net_OFI)
-    lam      = roll_cov / roll_var.clip(lower=1e-12)      # λ = cov / var
+
+    # Data-driven, causal "insufficient signal" floor (see docstring above).
+    # Uses a trailing lookback of 5×window so the floor reflects the ticker's
+    # own typical order-flow variance rather than one arbitrary constant.
+    trailing_median_var = roll_var.rolling(window * 5, min_periods=window).median()
+    floor = (trailing_median_var * 0.01).clip(lower=1e-12).fillna(1e-12)
+    lam = roll_cov / roll_var.where(roll_var >= floor)    # λ = cov / var, NaN if degenerate
     return lam.rename("kyle_lambda")
