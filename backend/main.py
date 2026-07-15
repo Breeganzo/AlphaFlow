@@ -1654,9 +1654,7 @@ async def stream_live_bars(tickers: str = "AAPL,MSFT,NVDA"):
 
     async def event_gen():
         # Initial handshake event — browser EventSource.onopen fires immediately
-        yield f"data: {'{\"type\":\"connected\",\"tickers\":{tickers!r}}'}\n\n".replace(
-            "{tickers!r}", str(ticker_list)
-        )
+        yield f"data: {json.dumps({'type': 'connected', 'tickers': ticker_list})}\n\n"
         async for bar in poll_latest_bars(ticker_list, interval_seconds=15):
             yield bar.to_sse()
 

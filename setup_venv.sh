@@ -7,7 +7,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # ── Python version check ──────────────────────────────────────────────────────
-if command -v python3.11 &>/dev/null; then
+if command -v python3.13 &>/dev/null; then
+  PYTHON=python3.13
+  echo "Using $($PYTHON --version)"
+elif command -v python3.11 &>/dev/null; then
   PYTHON=python3.11
   echo "Using $($PYTHON --version)"
 else
